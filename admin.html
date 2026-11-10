@@ -1,0 +1,320 @@
+﻿<!DOCTYPE html>
+<html lang="id" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Admin Portal - ZENITH 2026 Tournament Management</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .admin-wrapper {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: var(--space-lg) var(--space-md) 80px;
+      min-height: calc(100vh - 80px);
+    }
+    .login-container {
+      max-width: 440px;
+      margin: 60px auto 0;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: var(--space-xl);
+      box-shadow: var(--shadow-lg);
+    }
+    .login-brand-tag {
+      font-family: var(--font-display);
+      font-size: 0.75rem;
+      font-weight: 800;
+      color: var(--color-primary);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .login-title {
+      font-family: var(--font-display);
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text-main);
+      margin-bottom: 6px;
+    }
+    .login-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: var(--space-lg);
+    }
+    .dashboard-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--space-md);
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: var(--space-md) var(--space-lg);
+      margin-bottom: var(--space-lg);
+    }
+    .user-badge-wrap {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+    }
+    .admin-avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: var(--radius-full);
+      background-color: var(--color-primary-subtle);
+      border: 1.5px solid var(--color-primary);
+      color: var(--color-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: 1rem;
+    }
+    .admin-controls-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--space-md);
+      margin-bottom: var(--space-md);
+    }
+    .admin-matches-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: var(--space-md);
+    }
+    .admin-match-card {
+      background-color: var(--bg-surface);
+      border: 1.5px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: var(--space-md);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-sm);
+      transition: border-color 0.15s ease;
+    }
+    .admin-match-card:hover {
+      border-color: var(--border-strong);
+    }
+    .admin-match-card.completed {
+      border-color: rgba(16, 185, 129, 0.4);
+    }
+    .admin-team-action-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      min-height: 42px;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      border: 1.5px solid var(--border-subtle);
+      background-color: var(--bg-surface-elevated);
+      color: var(--text-main);
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: left;
+    }
+    .admin-team-action-btn:hover:not(:disabled) {
+      border-color: var(--color-primary);
+      background-color: var(--bg-surface-highlight);
+    }
+    .admin-team-action-btn.is-winner {
+      background-color: var(--color-win);
+      color: #ffffff;
+      border-color: var(--color-win);
+      font-weight: 700;
+    }
+    .admin-team-action-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .reset-btn {
+      min-height: 34px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      background-color: transparent;
+      border: 1px solid var(--border-subtle);
+      color: var(--text-dim);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .reset-btn:hover {
+      color: var(--color-error);
+      border-color: var(--color-error-subtle);
+      background-color: rgba(239, 68, 68, 0.08);
+    }
+  </style>
+</head>
+<body>
+  <!-- Header Bar -->
+  <header class="site-header">
+    <div class="header-container">
+      <div class="brand-group">
+        <a href="./" class="brand-badge" style="text-decoration: none;">
+          <span class="badge-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="6 2 18 2 18 6 6 6 6 2"></polygon>
+              <polygon points="3 6 21 6 18 16 6 16 3 6"></polygon>
+              <line x1="10" y1="16" x2="10" y2="21"></line>
+              <line x1="14" y1="16" x2="14" y2="21"></line>
+              <line x1="7" y1="21" x2="17" y2="21"></line>
+            </svg>
+          </span>
+          <span class="brand-name">ZENITH 2026</span>
+        </a>
+        <div class="brand-meta">
+          <span class="game-tag">PANEL WASIT RESMI</span>
+          <span id="admin-sync-indicator" class="status-indicator">
+            <span class="status-dot"></span>
+            <span class="status-text">Sinkronisasi</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <a href="./" class="action-btn" title="Buka Halaman Publik">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
+          </svg>
+          <span>Halaman Publik</span>
+        </a>
+
+        <button id="theme-toggle-btn" class="action-btn icon-only-btn" aria-label="Ganti tema warna" title="Ganti Tema">
+          <svg id="theme-icon-sun" class="theme-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg id="theme-icon-moon" class="theme-icon hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="admin-wrapper">
+    <!-- View 1: Login View -->
+    <div id="admin-login-view" class="login-container">
+      <div class="login-brand-tag">PORTAL WASIT & PANITIA</div>
+      <h1 class="login-title">Autentikasi Admin</h1>
+      <p class="login-subtitle">Masukkan username dan password resmi untuk mengelola hasil pertandingan turnamen.</p>
+
+      <form id="admin-login-form" onsubmit="handleAdminLoginSubmit(event)">
+        <div class="form-group">
+          <label for="input-admin-username">Username Wasit / Admin</label>
+          <input type="text" id="input-admin-username" required autocomplete="username" placeholder="Ketik username admin...">
+        </div>
+
+        <div class="form-group">
+          <label for="input-admin-password">Password Akses</label>
+          <input type="password" id="input-admin-password" required autocomplete="current-password" placeholder="Ketik password admin...">
+          <div id="login-error-message" class="form-error hidden">Kredensial username atau password salah.</div>
+        </div>
+
+        <button type="submit" class="primary-btn" style="width: 100%; min-height: 46px; margin-top: 8px;">Masuk ke Panel Kontrol</button>
+      </form>
+    </div>
+
+    <!-- View 2: Dashboard View -->
+    <div id="admin-dashboard-view" class="hidden">
+      <!-- Dashboard Header -->
+      <div class="dashboard-header">
+        <div class="user-badge-wrap">
+          <div class="admin-avatar">NG</div>
+          <div>
+            <div style="font-family: var(--font-display); font-weight: 800; font-size: 1.1rem; color: var(--text-main);">nayrbryaGaming</div>
+            <div style="font-size: 0.78rem; color: var(--color-primary); font-weight: 700;">Wasit Utama Turnamen (Super Admin)</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: var(--space-xs); align-items: center;">
+          <a href="./" class="secondary-btn" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+            <span>Lihat Website Publik</span>
+          </a>
+          <button class="secondary-btn" onclick="handleAdminLogout()" style="color: var(--color-error); border-color: var(--color-error-subtle);">
+            <span>Keluar</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Metrics -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-value">58</div>
+          <div class="metric-label">Total Pertandingan</div>
+          <div class="metric-desc">Semua Babak Kompetisi</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="admin-stat-completed">0</div>
+          <div class="metric-label">Laga Selesai</div>
+          <div class="metric-desc">Hasil Tersimpan & Tersinkron</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="admin-stat-pending">58</div>
+          <div class="metric-label">Laga Tertunda / Berlangsung</div>
+          <div class="metric-desc">Menunggu Hasil Pertandingan</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" style="color: var(--color-win);">LIVE</div>
+          <div class="metric-label">Status Realtime DB</div>
+          <div class="metric-desc">Sinkronisasi Otomatis SSE</div>
+        </div>
+      </div>
+
+      <!-- Controls & Filter Bar -->
+      <div class="admin-controls-bar">
+        <div class="search-box" style="max-width: 380px;">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="admin-search-input" placeholder="Cari tim atau Match ID..." autocomplete="off">
+        </div>
+
+        <div style="display: flex; gap: var(--space-xs); align-items: center; flex-wrap: wrap;">
+          <select id="admin-round-filter" class="styled-select" style="min-height: 42px; padding: 8px 14px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); color: var(--text-main);">
+            <option value="all">Semua Babak (58 Match)</option>
+            <option value="Round 1">Round 1 (26 Match)</option>
+            <option value="Round of 32">Round of 32 (16 Match)</option>
+            <option value="Round of 16">Round of 16 (8 Match)</option>
+            <option value="Quarterfinal">Quarterfinal (4 Match)</option>
+            <option value="Semifinal">Semifinal (2 Match)</option>
+            <option value="Perebutan Juara 3">Perebutan Juara 3</option>
+            <option value="Grand Final">Grand Final</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Matches Management Grid -->
+      <div class="admin-matches-grid" id="admin-matches-container">
+        <!-- Rendered via admin.js -->
+      </div>
+    </div>
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast-message" class="toast-box"></div>
+
+  <script type="module" src="admin/admin.js"></script>
+</body>
+</html>
+

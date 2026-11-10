@@ -9,7 +9,8 @@ export const TOURNAMENT_INFO = {
   dates: '10 - 12 November 2026',
   game: 'Mobile Legends: Bang Bang',
   firebaseDatabaseUrl: 'https://inex-ml-2026-default-rtdb.asia-southeast1.firebasedatabase.app',
-  adminAuthPassword: 'zenith2026',
+  adminAuthUsername: 'nayrbryaGaming',
+  adminAuthPassword: 'nayrbryanGaming',
   challongeUrl: 'https://challonge.com/6ayo1xlk'
 };
 

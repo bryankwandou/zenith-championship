@@ -423,14 +423,12 @@ function renderScheduleCard(matchItem) {
       </div>
 
       <div class="card-teams-wrap">
-        <div class="card-team-slot ${getSlotClass(slotZero.name, slotZero.isKnown, currentWinner)} ${isAdminAuthenticated && slotZero.isKnown ? 'clickable' : ''}"
-             ${isAdminAuthenticated && slotZero.isKnown ? `onclick="handleDirectAdminWinnerSelect(event, '${matchItem.id}', '${escapeQuotes(slotZero.name)}')"` : ''}>
+        <div class="card-team-slot ${getSlotClass(slotZero.name, slotZero.isKnown, currentWinner)}">
           <span class="slot-name">${slotZero.name}</span>
           ${currentWinner === slotZero.name ? '<span class="slot-status-mark">[MENANG]</span>' : ''}
         </div>
 
-        <div class="card-team-slot ${getSlotClass(slotOne.name, slotOne.isKnown, currentWinner)} ${isAdminAuthenticated && slotOne.isKnown ? 'clickable' : ''}"
-             ${isAdminAuthenticated && slotOne.isKnown ? `onclick="handleDirectAdminWinnerSelect(event, '${matchItem.id}', '${escapeQuotes(slotOne.name)}')"` : ''}>
+        <div class="card-team-slot ${getSlotClass(slotOne.name, slotOne.isKnown, currentWinner)}">
           <span class="slot-name">${slotOne.name}</span>
           ${currentWinner === slotOne.name ? '<span class="slot-status-mark">[MENANG]</span>' : ''}
         </div>
@@ -643,6 +641,14 @@ window.openMatchDetailModal = function(matchId) {
   const nextLabel = match.next ? `Pemenang melaju ke ${match.next.m}` : 'Penentuan Juara';
   const loserLabel = match.nextLoser ? `Kalah bertanding di ${match.nextLoser.m}` : '';
 
+  const winnerMarkup = currentWinner 
+    ? `<div style="padding: 10px 14px; background: var(--color-win-subtle); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-sm); color: var(--color-win); font-weight: 700; font-size: 0.9rem;">
+        Pemenang Pertandingan: ${currentWinner}
+       </div>`
+    : `<div style="padding: 10px 14px; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); color: var(--text-dim); font-size: 0.85rem;">
+        Pertandingan belum diselesaikan atau sedang berlangsung.
+       </div>`;
+
   body.innerHTML = `
     <div style="display: flex; flex-direction: column; gap: 14px;">
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8rem; background: var(--bg-surface-elevated); padding: 10px; border-radius: var(--radius-sm);">
@@ -652,30 +658,20 @@ window.openMatchDetailModal = function(matchId) {
         <div><strong>Status Siaran:</strong> ${match.stream ? 'Official Stream' : 'Reguler'}</div>
       </div>
 
-      <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-muted);">Pilih Pemenang (Mode Wasit / Admin):</div>
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        <button class="primary-btn" 
-                style="text-align: left; display: flex; justify-content: space-between; align-items: center; background: ${currentWinner === s0.name ? 'var(--color-win)' : 'var(--bg-surface-elevated)'}; color: ${currentWinner === s0.name ? '#ffffff' : 'var(--text-main)'}; border: 1px solid var(--border-subtle);"
-                ${!isAdminAuthenticated || !s0.isKnown ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''}
-                onclick="setMatchWinner('${match.id}', '${escapeQuotes(s0.name)}')">
-          <span>${s0.name}</span>
-          ${currentWinner === s0.name ? '<span>[PEMENANG]</span>' : (isAdminAuthenticated && s0.isKnown ? '<span>Tentukan Menang</span>' : '')}
-        </button>
-
-        <button class="primary-btn" 
-                style="text-align: left; display: flex; justify-content: space-between; align-items: center; background: ${currentWinner === s1.name ? 'var(--color-win)' : 'var(--bg-surface-elevated)'}; color: ${currentWinner === s1.name ? '#ffffff' : 'var(--text-main)'}; border: 1px solid var(--border-subtle);"
-                ${!isAdminAuthenticated || !s1.isKnown ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''}
-                onclick="setMatchWinner('${match.id}', '${escapeQuotes(s1.name)}')">
-          <span>${s1.name}</span>
-          ${currentWinner === s1.name ? '<span>[PEMENANG]</span>' : (isAdminAuthenticated && s1.isKnown ? '<span>Tentukan Menang</span>' : '')}
-        </button>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-weight: 700; font-size: 0.82rem; color: var(--text-muted);">Kontestan Laga:</div>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg-surface-elevated); border-radius: var(--radius-sm); font-weight: 600;">
+          <span style="color: ${currentWinner === s0.name ? 'var(--color-win)' : 'var(--text-main)'};">${s0.name}</span>
+          ${currentWinner === s0.name ? '<span style="font-size: 0.75rem; color: var(--color-win); font-weight: 700;">[PEMENANG]</span>' : ''}
+        </div>
+        <div style="text-align: center; font-size: 0.75rem; font-weight: 800; color: var(--text-dim);">VS</div>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg-surface-elevated); border-radius: var(--radius-sm); font-weight: 600;">
+          <span style="color: ${currentWinner === s1.name ? 'var(--color-win)' : 'var(--text-main)'};">${s1.name}</span>
+          ${currentWinner === s1.name ? '<span style="font-size: 0.75rem; color: var(--color-win); font-weight: 700;">[PEMENANG]</span>' : ''}
+        </div>
       </div>
 
-      ${isAdminAuthenticated && currentWinner ? `
-        <button class="secondary-btn" style="color: var(--color-error); border-color: var(--color-error-subtle);" onclick="setMatchWinner('${match.id}', null)">
-          Hapus / Reset Pemenang Pertandingan
-        </button>
-      ` : ''}
+      ${winnerMarkup}
 
       <div style="font-size: 0.78rem; color: var(--text-dim); border-top: 1px solid var(--border-subtle); padding-top: 8px;">
         <div>${nextLabel}</div>
@@ -692,22 +688,6 @@ window.closeMatchModal = function() {
   if (modal) modal.classList.remove('open');
 };
 
-window.openAdminModal = function() {
-  const modal = document.getElementById('modal-admin-login');
-  if (modal) {
-    modal.classList.add('open');
-    setTimeout(() => {
-      const input = document.getElementById('admin-password-input');
-      if (input) input.focus();
-    }, 100);
-  }
-};
-
-window.closeAdminModal = function() {
-  const modal = document.getElementById('modal-admin-login');
-  if (modal) modal.classList.remove('open');
-};
-
 window.toggleStageAccordion = function(headerElement) {
   const parent = headerElement.closest('.stage-accordion-block');
   if (parent) parent.classList.toggle('open');
@@ -716,41 +696,6 @@ window.toggleStageAccordion = function(headerElement) {
 window.toggleRuleChapter = function(headerElement) {
   const parent = headerElement.closest('.rule-chapter-card');
   if (parent) parent.classList.toggle('open');
-};
-
-window.handleDirectAdminWinnerSelect = function(event, matchId, teamName) {
-  event.stopPropagation();
-  if (!isAdminAuthenticated) return;
-  setMatchWinner(matchId, teamName);
-};
-
-window.setMatchWinner = async function(matchId, selectedTeam) {
-  if (!isAdminAuthenticated) {
-    showToast('Masuk sebagai admin terlebih dahulu untuk mengubah hasil');
-    return;
-  }
-
-  const currentWinner = tournamentResults[matchId];
-  const newWinner = currentWinner === selectedTeam ? null : selectedTeam;
-
-  if (newWinner === null) {
-    delete tournamentResults[matchId];
-  } else {
-    tournamentResults[matchId] = newWinner;
-  }
-
-  persistCachedResults();
-  renderAllViews();
-  closeMatchModal();
-
-  showToast(newWinner ? `${newWinner} ditetapkan sebagai pemenang ${matchId}` : `Hasil ${matchId} direset`);
-
-  if (isFirebaseConnected) {
-    const success = await writeMatchResultToFirebase(matchId, newWinner);
-    if (!success) {
-      showToast('Gagal sinkronisasi ke Firebase RTDB');
-    }
-  }
 };
 
 // ==========================================================================
@@ -881,36 +826,6 @@ function setupEventListeners() {
     });
   }
 
-  // Admin Triggers
-  const adminTriggerBtn = document.getElementById('admin-trigger-btn');
-  const floatingAdminBtn = document.getElementById('floating-admin-btn');
-  const adminLoginSubmitBtn = document.getElementById('admin-login-submit-btn');
-  const adminPasswordInput = document.getElementById('admin-password-input');
-
-  const handleAdminClick = () => {
-    if (isAdminAuthenticated) {
-      isAdminAuthenticated = false;
-      updateAdminButtonState();
-      renderAllViews();
-      showToast('Mode admin dinonaktifkan');
-    } else {
-      openAdminModal();
-    }
-  };
-
-  if (adminTriggerBtn) adminTriggerBtn.addEventListener('click', handleAdminClick);
-  if (floatingAdminBtn) floatingAdminBtn.addEventListener('click', handleAdminClick);
-
-  if (adminLoginSubmitBtn) {
-    adminLoginSubmitBtn.addEventListener('click', attemptAdminLogin);
-  }
-
-  if (adminPasswordInput) {
-    adminPasswordInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') attemptAdminLogin();
-    });
-  }
-
   // Floating Share Button
   const shareBtn = document.getElementById('floating-share-btn');
   if (shareBtn) {
@@ -932,7 +847,6 @@ function setupEventListeners() {
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       closeMatchModal();
-      closeAdminModal();
     }
   });
 
@@ -940,43 +854,9 @@ function setupEventListeners() {
     overlay.addEventListener('click', e => {
       if (e.target === overlay) {
         closeMatchModal();
-        closeAdminModal();
       }
     });
   });
-}
-
-function attemptAdminLogin() {
-  const passwordInput = document.getElementById('admin-password-input');
-  const errorText = document.getElementById('admin-auth-error');
-
-  if (passwordInput && passwordInput.value === TOURNAMENT_INFO.adminAuthPassword) {
-    isAdminAuthenticated = true;
-    errorText.classList.add('hidden');
-    passwordInput.value = '';
-    closeAdminModal();
-    updateAdminButtonState();
-    renderAllViews();
-    showToast('Mode Admin Aktif');
-  } else {
-    if (errorText) errorText.classList.remove('hidden');
-  }
-}
-
-function updateAdminButtonState() {
-  const adminBtn = document.getElementById('admin-trigger-btn');
-  const adminLabel = document.getElementById('admin-label-text');
-  const fabAdminLabel = document.getElementById('floating-admin-text');
-
-  if (isAdminAuthenticated) {
-    if (adminBtn) adminBtn.classList.add('logged-in');
-    if (adminLabel) adminLabel.textContent = 'Keluar Admin';
-    if (fabAdminLabel) fabAdminLabel.textContent = 'Keluar Admin';
-  } else {
-    if (adminBtn) adminBtn.classList.remove('logged-in');
-    if (adminLabel) adminLabel.textContent = 'Admin';
-    if (fabAdminLabel) fabAdminLabel.textContent = 'Mode Admin';
-  }
 }
 
 function shareBracketUrl() {

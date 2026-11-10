@@ -38,6 +38,9 @@ Portal informasi komprehensif bagan pertandingan, jadwal rundown 3 hari kompetis
 - Live Website GitHub Pages: https://bryankwandou.github.io/zenith-championship/
 - Repositori GitHub: https://github.com/bryankwandou/zenith-championship
 
-## Informasi Autentikasi Admin
+## Informasi Akses Wasit & Admin
 
-- Kata Sandi Admin: zenith2026
+Halaman administrasi dipisahkan secara privat dari antarmuka publik tanpa tombol login di halaman utama.
+- Halaman Portal Admin: `/admin` (atau `/admin/`)
+- Username Admin: `nayrbryaGaming`
+- Password Admin: `nayrbryanGaming`
