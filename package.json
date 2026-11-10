@@ -1,5 +1,5 @@
 {
-  "name": "inex-2026-mlbb",
+  "name": "inex-arena-championship",
   "version": "1.0.0",
   "description": "INEX 2026 Mobile Legends Tournament Rundown and Interactive Bracket System",
   "type": "module",
@@ -16,3 +16,4 @@
   "author": "bryankwandou",
   "license": "MIT"
 }
+

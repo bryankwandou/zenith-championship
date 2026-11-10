@@ -1,6 +1,6 @@
-# INEX 2026 Mobile Legends Tournament System
+# INEX Arena Championship 2026
 
-Portal informasi komprehensif bagan pertandingan, jadwal rundown 3 hari kompetisi, direktori 58 tim peserta, dan regulasi resmi turnamen Mobile Legends: Bang Bang.
+Portal informasi komprehensif bagan pertandingan, jadwal rundown 3 hari kompetisi, direktori 58 tim peserta, dan regulasi resmi turnamen kompetitif.
 
 ## Fitur Utama
 
@@ -25,11 +25,18 @@ Portal informasi komprehensif bagan pertandingan, jadwal rundown 3 hari kompetis
 ## Panduan Menjalankan Secara Lokal
 
 1. Buka direktori proyek melalui terminal atau antarmuka berkas.
-2. Jalankan server HTTP statis lokal (contoh: menggunakan npx serve atau live server):
+2. Jalankan server HTTP statis lokal:
    ```bash
    npx serve .
    ```
 3. Buka browser pada alamat yang disediakan (contoh: http://localhost:3000).
+
+## Tautan Proyek
+
+- Repositori GitHub: https://github.com/bryankwandou/inex-arena-championship
+- GitHub Pages: https://bryankwandou.github.io/inex-arena-championship/
+- Proyek Vercel: https://vercel.com/vincentius-bryan-kwandou/inex-arena-championship
+- Domain Vercel: https://inex-arena-championship.vercel.app
 
 ## Informasi Autentikasi Admin
 
