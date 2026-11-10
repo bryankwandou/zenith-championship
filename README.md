@@ -19,7 +19,7 @@ Portal informasi komprehensif bagan pertandingan, jadwal rundown 3 hari kompetis
 - app.js: Logika aplikasi, state management, sinkronisasi SSE, dan penanganan interaksi pengguna.
 - bracket-data.js: Metadata 58 pertandingan, jadwal waktu, relasi alur pemenang, dan format laga.
 - teams-data.js: Direktori 58 tim peserta dan penetapan status unggulan (BYE).
-- rules-data.js: Buku regulasi dan tata tertib kompetisi resmi KREYNTIX 2026.
+- rules-data.js: Buku regulasi dan tata tertib kompetisi resmi Kreyntix 2026.
 - vercel.json: Konfigurasi deployment dan header keamanan HTTP untuk Vercel.
 
 ## Panduan Menjalankan Secara Lokal
@@ -31,12 +31,12 @@ Portal informasi komprehensif bagan pertandingan, jadwal rundown 3 hari kompetis
    ```
 3. Buka browser pada alamat yang disediakan (contoh: http://localhost:3000).
 
-## Tautan Proyek
+## Tautan Proyek Aktif
 
+- Live Website Vercel (Production): https://kreyntix-battle-arena.vercel.app
+- Live Deployment Vercel: https://kreyntix-battle-arena-3afte8tdc-vincentius-bryan-kwandou.vercel.app
+- Live Website GitHub Pages: https://bryankwandou.github.io/kreyntix-battle-arena/
 - Repositori GitHub: https://github.com/bryankwandou/kreyntix-battle-arena
-- GitHub Pages: https://bryankwandou.github.io/kreyntix-battle-arena/
-- Proyek Vercel: https://vercel.com/vincentius-bryan-kwandou/kreyntix-battle-arena
-- Domain Vercel: https://kreyntix-battle-arena.vercel.app
 
 ## Informasi Autentikasi Admin
 
