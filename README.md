@@ -1,4 +1,4 @@
-# Kreyntix Battle Arena 2026
+# Zenith Esports Championship 2026
 
 Portal informasi komprehensif bagan pertandingan, jadwal rundown 3 hari kompetisi, direktori 58 tim peserta, dan regulasi resmi turnamen kompetitif.
 
@@ -19,7 +19,7 @@ Portal informasi komprehensif bagan pertandingan, jadwal rundown 3 hari kompetis
 - app.js: Logika aplikasi, state management, sinkronisasi SSE, dan penanganan interaksi pengguna.
 - bracket-data.js: Metadata 58 pertandingan, jadwal waktu, relasi alur pemenang, dan format laga.
 - teams-data.js: Direktori 58 tim peserta dan penetapan status unggulan (BYE).
-- rules-data.js: Buku regulasi dan tata tertib kompetisi resmi Kreyntix 2026.
+- rules-data.js: Buku regulasi dan tata tertib kompetisi resmi Zenith 2026.
 - vercel.json: Konfigurasi deployment dan header keamanan HTTP untuk Vercel.
 
 ## Panduan Menjalankan Secara Lokal
@@ -33,11 +33,11 @@ Portal informasi komprehensif bagan pertandingan, jadwal rundown 3 hari kompetis
 
 ## Tautan Proyek Aktif
 
-- Live Website Vercel (Production): https://kreyntix-battle-arena.vercel.app
-- Live Deployment Vercel: https://kreyntix-battle-arena-3afte8tdc-vincentius-bryan-kwandou.vercel.app
-- Live Website GitHub Pages: https://bryankwandou.github.io/kreyntix-battle-arena/
-- Repositori GitHub: https://github.com/bryankwandou/kreyntix-battle-arena
+- Live Website Vercel (Production): https://zenith-championship.vercel.app
+- Live Deployment Vercel: https://zenith-championship-3afte8tdc-vincentius-bryan-kwandou.vercel.app
+- Live Website GitHub Pages: https://bryankwandou.github.io/zenith-championship/
+- Repositori GitHub: https://github.com/bryankwandou/zenith-championship
 
 ## Informasi Autentikasi Admin
 
-- Kata Sandi Admin: kreyntix2026
+- Kata Sandi Admin: zenith2026

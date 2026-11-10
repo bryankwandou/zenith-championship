@@ -1,4 +1,4 @@
-// Buku Panduan Resmi & Regulasi Kompetisi KREYNTIX 2026 Mobile Legends: Bang Bang
+// Buku Panduan Resmi & Regulasi Kompetisi ZENITH 2026 Mobile Legends: Bang Bang
 
 export const TOURNAMENT_RULES = [
   {
@@ -186,7 +186,7 @@ export const TOURNAMENT_RULES = [
       {
         number: '8.3',
         title: 'Pembaruan Bagan Real-Time',
-        text: 'Admin turnamen memperbarui data pertandingan ke sistem bagan terpusat yang secara otomatis menyinkronkan status match di situs resmi KREYNTIX 2026 dan platform Challonge.'
+        text: 'Admin turnamen memperbarui data pertandingan ke sistem bagan terpusat yang secara otomatis menyinkronkan status match di situs resmi ZENITH 2026 dan platform Challonge.'
       }
     ]
   },
@@ -199,7 +199,7 @@ export const TOURNAMENT_RULES = [
       {
         number: '9.1',
         title: 'Peringkat Juara 1',
-        text: 'Trophy Kejuaraan Utama KREYNTIX 2026, Sertifikat Juara Resmi, dan Alokasi Hadiah Utama Turnamen.'
+        text: 'Trophy Kejuaraan Utama ZENITH 2026, Sertifikat Juara Resmi, dan Alokasi Hadiah Utama Turnamen.'
       },
       {
         number: '9.2',
