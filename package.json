@@ -1,7 +1,7 @@
 {
-  "name": "inex-arena-championship",
+  "name": "kreyntix-battle-arena",
   "version": "1.0.0",
-  "description": "INEX 2026 Mobile Legends Tournament Rundown and Interactive Bracket System",
+  "description": "KREYNTIX 2026 Mobile Legends Tournament Rundown and Interactive Bracket System",
   "type": "module",
   "scripts": {
     "start": "npx serve ."

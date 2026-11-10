@@ -1,4 +1,4 @@
-// Logika Utama Aplikasi Web INEX 2026 Mobile Legends: Bang Bang
+// Logika Utama Aplikasi Web KREYNTIX 2026 Mobile Legends: Bang Bang
 
 import { TOURNAMENT_INFO, BRACKET_MATCHES, MATCH_BY_ID, ROUND_LABELS } from './bracket-data.js';
 import { TEAMS_DATA } from './teams-data.js';
@@ -10,12 +10,12 @@ let isAdminAuthenticated = false;
 let isFirebaseConnected = false;
 let activeSearchQuery = '';
 let activeScheduleDay = 1;
-let currentTheme = localStorage.getItem('inex_theme') || 'dark';
+let currentTheme = localStorage.getItem('kreyntix_theme') || 'dark';
 let activeStreamController = null;
 
 const STORAGE_KEYS = {
-  RESULTS: 'inex2026_results',
-  THEME: 'inex_theme'
+  RESULTS: 'kreyntix2026_results',
+  THEME: 'kreyntix_theme'
 };
 
 // ==========================================================================

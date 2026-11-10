@@ -1,4 +1,4 @@
-// Direktori lengkap 58 Tim Peserta INEX 2026 Mobile Legends: Bang Bang
+// Direktori lengkap 58 Tim Peserta KREYNTIX 2026 Mobile Legends: Bang Bang
 
 export const TEAMS_DATA = [
   // Tim dengan status BYE langsung menuju Babak 32 Besar (Round of 32)

@@ -1,15 +1,15 @@
-// Data turnamen INEX 2026 Mobile Legends: Bang Bang
+// Data turnamen KREYNTIX 2026 Mobile Legends: Bang Bang
 // Total 58 Tim, Single Elimination, 58 Pertandingan
 
 export const TOURNAMENT_INFO = {
-  name: 'INEX 2026',
-  title: 'INEX 2026 Mobile Legends Tournament',
+  name: 'KREYNTIX 2026',
+  title: 'KREYNTIX 2026 Mobile Legends Tournament',
   subtitle: 'Tournament Rundown & Bracket System',
   format: 'Single Elimination (58 Tim)',
   dates: '10 - 12 November 2026',
   game: 'Mobile Legends: Bang Bang',
   firebaseDatabaseUrl: 'https://inex-ml-2026-default-rtdb.asia-southeast1.firebasedatabase.app',
-  adminAuthPassword: 'inex2026',
+  adminAuthPassword: 'kreyntix2026',
   challongeUrl: 'https://challonge.com/6ayo1xlk'
 };
 
