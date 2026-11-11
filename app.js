@@ -1,890 +1,469 @@
-// Logika Utama Aplikasi Web ZENITH 2026 Mobile Legends: Bang Bang
-
-import { TOURNAMENT_INFO, BRACKET_MATCHES, MATCH_BY_ID, ROUND_LABELS } from './bracket-data.js';
+﻿import { BRACKET_MATCHES } from './bracket-data.js';
 import { TEAMS_DATA } from './teams-data.js';
 import { TOURNAMENT_RULES } from './rules-data.js';
+import { LANGUAGES, RTL_LANGUAGES, getDictionary } from './i18n.js';
+import {
+  readCache, writeCache, fetchRemote, subscribeRemote,
+  resolveMatches, eliminatedTeams, teamName, teamMeta, escapeHtml
+} from './core.js';
 
-// State Aplikasi
-let tournamentResults = {};
-let isAdminAuthenticated = false;
-let isFirebaseConnected = false;
-let activeSearchQuery = '';
-let activeScheduleDay = 1;
-let currentTheme = localStorage.getItem('zenith_theme') || 'dark';
-let activeStreamController = null;
+const ROUTES = ['home', 'bracket', 'schedule', 'teams', 'rules', 'stream'];
+const CARD_WIDTH = 234;
+const CARD_HEIGHT = 52;
+const COLUMN_STEP = 290;
+const TOP_OFFSET = 56;
+const SLOT_HEIGHT = 128;
 
-const STORAGE_KEYS = {
-  RESULTS: 'zenith2026_results',
-  THEME: 'zenith_theme'
+const ui = {
+  data: readCache(),
+  resolved: null,
+  lang: localStorage.getItem('zenith_lang') || detectLanguage(),
+  t: null,
+  day: 1,
+  teamFilter: 'all',
+  zoom: window.innerWidth < 640 ? 0.75 : 1,
+  connectors: []
 };
 
-// ==========================================================================
-// INISIALISASI APLIKASI
-// ==========================================================================
-document.addEventListener('DOMContentLoaded', () => {
-  applyTheme(currentTheme);
-  loadCachedResults();
-  setupEventListeners();
-  checkUrlHashForState();
-  renderAllViews();
-  initializeFirebaseStream();
-});
-
-// ==========================================================================
-// RESOLUSI TIM DALAM SLOT PERTANDINGAN
-// ==========================================================================
-function resolveMatchSlot(slotDefinition, resultsMap) {
-  if (typeof slotDefinition === 'string') {
-    return { name: slotDefinition, isKnown: true, isBye: false };
-  }
-
-  if (slotDefinition && slotDefinition.w) {
-    const winnerTeam = resultsMap[slotDefinition.w];
-    if (winnerTeam) {
-      return { name: winnerTeam, isKnown: true, isBye: false };
-    }
-    return { name: `Pemenang ${slotDefinition.w}`, isKnown: false, isBye: false };
-  }
-
-  if (slotDefinition && slotDefinition.l) {
-    const parentMatch = MATCH_BY_ID[slotDefinition.l];
-    const parentWinner = resultsMap[slotDefinition.l];
-    if (!parentWinner || !parentMatch) {
-      return { name: `Kalah ${slotDefinition.l}`, isKnown: false, isBye: false };
-    }
-    const teamA = resolveMatchSlot(parentMatch.s0, resultsMap);
-    const teamB = resolveMatchSlot(parentMatch.s1, resultsMap);
-    const loser = [teamA, teamB].find(item => item.isKnown && item.name !== parentWinner);
-    if (loser) {
-      return { name: loser.name, isKnown: true, isBye: false };
-    }
-    return { name: `Kalah ${slotDefinition.l}`, isKnown: false, isBye: false };
-  }
-
-  return { name: 'Menunggu Hasil', isKnown: false, isBye: false };
+function detectLanguage() {
+  const preferred = (navigator.language || 'id').slice(0, 2).toLowerCase();
+  return LANGUAGES.some(item => item.code === preferred) ? preferred : 'id';
 }
 
-// ==========================================================================
-// FIREBASE REALTIME SYNC (SSE STREAM & REST API)
-// ==========================================================================
-function getFirebaseEndpoint(path = '') {
-  const base = TOURNAMENT_INFO.firebaseDatabaseUrl.replace(/\/$/, '');
-  return `${base}/${path}.json`;
+const $ = (selector) => document.querySelector(selector);
+
+/* ---------- Localisation ---------- */
+function applyLanguage() {
+  ui.t = getDictionary(ui.lang);
+  document.documentElement.lang = ui.lang;
+  document.documentElement.dir = RTL_LANGUAGES.has(ui.lang) ? 'rtl' : 'ltr';
+  document.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = ui.t[node.dataset.i18n]; });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(node => { node.placeholder = ui.t[node.dataset.i18nPlaceholder]; });
+  $('#lang-select').setAttribute('aria-label', ui.t.language);
+  $('#theme-btn').setAttribute('aria-label', ui.t.theme);
 }
 
-async function initializeFirebaseStream() {
-  if (!TOURNAMENT_INFO.firebaseDatabaseUrl) return;
-
-  if (activeStreamController) {
-    activeStreamController.abort();
-  }
-  activeStreamController = new AbortController();
-
-  updateSyncIndicator(false, 'Menghubungkan');
-
-  try {
-    const response = await fetch(getFirebaseEndpoint('results'), {
-      headers: { Accept: 'text/event-stream' },
-      signal: activeStreamController.signal
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    isFirebaseConnected = true;
-    updateSyncIndicator(true, 'Live Realtime');
-
-    const streamReader = response.body.getReader();
-    const textDecoder = new TextDecoder();
-    let streamBuffer = '';
-
-    while (true) {
-      const { done, value } = await streamReader.read();
-      if (done) break;
-
-      streamBuffer += textDecoder.decode(value, { stream: true });
-      const messageLines = streamBuffer.split('\n');
-      streamBuffer = messageLines.pop();
-
-      let streamEvent = '';
-      for (const line of messageLines) {
-        if (line.startsWith('event: ')) {
-          streamEvent = line.slice(7).trim();
-        } else if (line.startsWith('data: ') && (streamEvent === 'put' || streamEvent === 'patch')) {
-          try {
-            const streamPayload = JSON.parse(line.slice(6));
-            if (streamPayload && streamPayload.path === '/') {
-              tournamentResults = streamPayload.data || {};
-              persistCachedResults();
-              renderAllViews();
-            } else if (streamPayload && streamPayload.path && streamPayload.path.startsWith('/')) {
-              const matchKey = streamPayload.path.slice(1);
-              if (streamPayload.data === null) {
-                delete tournamentResults[matchKey];
-              } else {
-                tournamentResults[matchKey] = streamPayload.data;
-              }
-              persistCachedResults();
-              renderAllViews();
-            }
-          } catch (jsonError) {
-            // Buffer parsing
-          }
-          streamEvent = '';
-        }
-      }
-    }
-  } catch (error) {
-    if (error.name === 'AbortError') return;
-    isFirebaseConnected = false;
-    updateSyncIndicator(false, 'Mode Offline');
-    setTimeout(initializeFirebaseStream, 6000);
-  }
+/* ---------- Routing ---------- */
+function currentRoute() {
+  const hash = location.hash.replace('#', '');
+  return ROUTES.includes(hash) ? hash : 'home';
 }
 
-async function writeMatchResultToFirebase(matchId, winningTeamName) {
-  if (!TOURNAMENT_INFO.firebaseDatabaseUrl) return false;
-  try {
-    if (winningTeamName === null) {
-      await fetch(getFirebaseEndpoint(`results/${matchId}`), {
-        method: 'DELETE'
-      });
-    } else {
-      await fetch(getFirebaseEndpoint(`results/${matchId}`), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(winningTeamName)
-      });
-    }
-    return true;
-  } catch (err) {
-    return false;
-  }
+function applyRoute() {
+  const route = currentRoute();
+  ROUTES.forEach(name => $(`#view-${name}`).classList.toggle('active', name === route));
+  document.querySelectorAll('[data-route]').forEach(link => link.classList.toggle('active', link.dataset.route === route));
+  window.scrollTo({ top: 0 });
 }
 
-function updateSyncIndicator(isConnected, statusLabel) {
-  const indicator = document.getElementById('live-indicator');
-  if (!indicator) return;
+/* ---------- Helpers ---------- */
+function displayName(teamId) {
+  return teamName(ui.data, teamId);
+}
 
-  const statusText = indicator.querySelector('.status-text');
-  if (statusText) statusText.textContent = statusLabel;
+function seedOf(teamId) {
+  const meta = teamMeta(teamId);
+  return meta ? meta.seed : '';
+}
 
-  if (isConnected) {
-    indicator.classList.add('live-active');
+function renderAll() {
+  ui.resolved = resolveMatches(ui.data);
+  renderLanding();
+  renderBracket();
+  renderSchedule();
+  renderTeams();
+  renderRules();
+  renderStream();
+}
+
+/* ---------- Landing ---------- */
+function renderLanding() {
+  const done = [...ui.resolved.values()].filter(match => match.done).length;
+  $('#stat-done').textContent = done;
+  const final = ui.resolved.get('M58');
+  const slot = $('#champion-slot');
+  if (final && final.done) {
+    const champion = displayName(final.teams[final.winnerSlot]);
+    slot.innerHTML = `<div class="card champion"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.7V17c0 .6-.5 1-1 1.2-1.2.5-2 2-2 3.8M14 14.7V17c0 .6.5 1 1 1.2 1.2.5 2 2 2 3.8M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg><div><small>${escapeHtml(ui.t.winner)} &middot; Grand Final</small><strong>${escapeHtml(champion)}</strong></div></div>`;
+    slot.classList.remove('hidden');
   } else {
-    indicator.classList.remove('live-active');
+    slot.innerHTML = '';
+    slot.classList.add('hidden');
   }
 }
 
-// ==========================================================================
-// CACHE LOKAL & SHARING
-// ==========================================================================
-function loadCachedResults() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.RESULTS);
-    if (raw) {
-      tournamentResults = JSON.parse(raw);
-    }
-  } catch (e) {
-    tournamentResults = {};
+/* ---------- Bracket (Challonge style) ---------- */
+function computeLayout() {
+  const positions = new Map();
+  const roundOf32 = BRACKET_MATCHES.filter(match => match.round === 'Round of 32');
+  roundOf32.forEach((match, index) => {
+    positions.set(match.id, { col: 1, cy: TOP_OFFSET + index * SLOT_HEIGHT + SLOT_HEIGHT / 2 });
+  });
+  BRACKET_MATCHES.filter(match => match.round === 'Round 1').forEach(match => {
+    const target = positions.get(match.next.m);
+    const offset = (CARD_HEIGHT + 12) / 2;
+    positions.set(match.id, { col: 0, cy: target.cy + (match.next.slot === 0 ? -offset : offset) });
+  });
+  const columnFor = { 'Round of 16': 2, Quarterfinals: 3, Semifinals: 4, 'Grand Final': 5 };
+  BRACKET_MATCHES.filter(match => columnFor[match.round] !== undefined).forEach(match => {
+    const feeders = [match.s0, match.s1].map(item => positions.get(item.w));
+    positions.set(match.id, { col: columnFor[match.round], cy: (feeders[0].cy + feeders[1].cy) / 2 });
+  });
+  const grandFinal = positions.get('M58');
+  positions.set('M57', { col: 5, cy: grandFinal.cy + 150 });
+  return positions;
+}
+
+const LAYOUT = computeLayout();
+
+function rowHtml(match, slot) {
+  const teamId = match.teams[slot];
+  const name = displayName(teamId);
+  let state = '';
+  if (match.done) state = match.winnerSlot === slot ? 'win' : 'lose';
+  return `<div class="row ${state}" data-team="${teamId || ''}">
+    <span class="seed">${seedOf(teamId)}</span>
+    <span class="name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+    <span class="mark">${match.done && match.winnerSlot === slot ? 'W' : ''}</span>
+  </div>`;
+}
+
+function renderBracket() {
+  const stage = $('#bracket-stage');
+  const width = COLUMN_STEP * 6 + 40;
+  const height = TOP_OFFSET + SLOT_HEIGHT * 16 + 40;
+  const labels = ['Round 1', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals'];
+  let cards = labels.map((label, col) => `<div class="round-label" style="left:${col * COLUMN_STEP + 42}px">${label}</div>`).join('');
+  const paths = [];
+  ui.connectors = [];
+
+  for (const match of ui.resolved.values()) {
+    const position = LAYOUT.get(match.id);
+    const left = position.col * COLUMN_STEP + 16;
+    const top = position.cy - CARD_HEIGHT / 2;
+    const number = match.id.replace('M', '');
+    cards += `<div class="match ${match.stream ? 'stream' : ''}" data-match="${match.id}" style="left:${left}px;top:${top}px">
+      <span class="match-no">${number}</span>
+      <div class="match-box">${rowHtml(match, 0)}${rowHtml(match, 1)}</div>
+    </div>`;
+
+    if (match.id === 'M57') continue;
+    [match.s0, match.s1].forEach((definition, slot) => {
+      if (!definition.w) return;
+      const feeder = ui.resolved.get(definition.w);
+      const from = LAYOUT.get(definition.w);
+      const x1 = from.col * COLUMN_STEP + 16 + CARD_WIDTH;
+      const x2 = left + 26;
+      const y2 = top + (slot === 0 ? 13 : 39);
+      const mid = x1 + (x2 - x1) / 2;
+      const teamId = feeder.done ? feeder.teams[feeder.winnerSlot] : '';
+      paths.push(`<path data-team="${teamId}" d="M${x1} ${from.cy} H${mid} V${y2} H${x2}"/>`);
+    });
   }
+
+  stage.style.width = `${width}px`;
+  stage.style.height = `${height}px`;
+  stage.style.zoom = ui.zoom;
+  stage.innerHTML = `<svg class="bracket-svg" width="${width}" height="${height}">${paths.join('')}</svg>${cards}`;
+  applyBracketSearch();
 }
 
-function persistCachedResults() {
-  try {
-    localStorage.setItem(STORAGE_KEYS.RESULTS, JSON.stringify(tournamentResults));
-  } catch (e) {
-    // Local storage error handling
-  }
+function highlightTeam(teamId) {
+  document.querySelectorAll('#bracket-stage .row').forEach(row => row.classList.toggle('lit', Boolean(teamId) && row.dataset.team === teamId));
+  document.querySelectorAll('#bracket-stage path').forEach(path => path.classList.toggle('lit', Boolean(teamId) && path.dataset.team === teamId));
 }
 
-function checkUrlHashForState() {
-  const hash = window.location.hash.slice(1);
-  if (hash.startsWith('s=')) {
-    try {
-      const decoded = atob(decodeURIComponent(hash.slice(2)));
-      tournamentResults = JSON.parse(decoded);
-      persistCachedResults();
-      showToast('Bagan dimuat dari tautan bagikan');
-    } catch (err) {
-      // Invalid hash
-    }
-  }
+function applyBracketSearch() {
+  const query = $('#bracket-search').value.trim().toLowerCase();
+  document.querySelectorAll('#bracket-stage .match').forEach(card => {
+    if (!query) { card.classList.remove('dim'); return; }
+    const match = ui.resolved.get(card.dataset.match);
+    const hit = match.teams.some(teamId => displayName(teamId).toLowerCase().includes(query));
+    card.classList.toggle('dim', !hit);
+  });
 }
 
-// ==========================================================================
-// RENDERING VIEW UTAMA
-// ==========================================================================
-function renderAllViews() {
-  updateMetricsDisplay();
-  renderVisualBracketTree();
-  renderScheduleView();
-  renderTeamsDirectory();
-  renderRulesAccordion();
-  renderStreamMatchesList();
-}
-
-function updateMetricsDisplay() {
-  const completedCount = Object.keys(tournamentResults).length;
-  const completedElement = document.getElementById('stat-completed-matches');
-  if (completedElement) {
-    completedElement.textContent = `${completedCount} / 58`;
-  }
-}
-
-// ==========================================================================
-// TAB 1: VISUAL BRACKET TREE
-// ==========================================================================
-function renderVisualBracketTree() {
-  const canvas = document.getElementById('bracket-canvas');
-  if (!canvas) return;
-
-  const roundsConfig = [
-    { title: 'Round 1 (26 Match)', matches: BRACKET_MATCHES.filter(m => m.round === 'Round 1') },
-    { title: 'Round of 32 (16 Match)', matches: BRACKET_MATCHES.filter(m => m.round === 'Round of 32') },
-    { title: 'Round of 16 (8 Match)', matches: BRACKET_MATCHES.filter(m => m.round === 'Round of 16') },
-    { title: 'Quarterfinal (4 Match)', matches: BRACKET_MATCHES.filter(m => m.round === 'Quarterfinal') },
-    { title: 'Semifinal (BO3)', matches: BRACKET_MATCHES.filter(m => m.round === 'Semifinal') },
-    { title: 'Finals (Juara 3 & GF)', matches: BRACKET_MATCHES.filter(m => m.round === 'Perebutan Juara 3' || m.round === 'Grand Final') }
-  ];
-
-  let htmlContent = '';
-
-  roundsConfig.forEach(column => {
-    htmlContent += `
-      <div class="bracket-round-column">
-        <div class="round-column-header">
-          <div class="round-col-title">${column.title}</div>
-          <div class="round-col-meta">${column.matches.length} Laga Terjadwal</div>
-        </div>
-        <div class="round-matches-stack">
-          ${column.matches.map(matchItem => createBracketNodeMarkup(matchItem)).join('')}
-        </div>
-      </div>
-    `;
+function setupBracketInteractions() {
+  const stage = $('#bracket-stage');
+  const shell = $('#bracket-shell');
+  stage.addEventListener('mouseover', event => {
+    const row = event.target.closest('.row');
+    highlightTeam(row ? row.dataset.team : '');
+  });
+  stage.addEventListener('mouseleave', () => highlightTeam(''));
+  stage.addEventListener('click', event => {
+    const card = event.target.closest('.match');
+    if (card && !shell.dataset.moved) openMatch(card.dataset.match);
   });
 
-  canvas.innerHTML = htmlContent;
+  const setZoom = (value) => {
+    ui.zoom = Math.min(1.6, Math.max(0.4, Math.round(value * 100) / 100));
+    stage.style.zoom = ui.zoom;
+  };
+  $('#zoom-in').addEventListener('click', () => setZoom(ui.zoom + 0.1));
+  $('#zoom-out').addEventListener('click', () => setZoom(ui.zoom - 0.1));
+  $('#zoom-reset').addEventListener('click', () => { setZoom(window.innerWidth < 640 ? 0.75 : 1); shell.scrollTo({ left: 0, top: 0 }); });
+  $('#bracket-search').addEventListener('input', applyBracketSearch);
+
+  let drag = null;
+  shell.addEventListener('pointerdown', event => {
+    if (event.pointerType !== 'mouse') return;
+    drag = { x: event.clientX, y: event.clientY, left: shell.scrollLeft, top: shell.scrollTop };
+    delete shell.dataset.moved;
+  });
+  window.addEventListener('pointermove', event => {
+    if (!drag) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) { shell.dataset.moved = '1'; shell.classList.add('dragging'); }
+    shell.scrollLeft = drag.left - dx;
+    shell.scrollTop = drag.top - dy;
+  });
+  window.addEventListener('pointerup', () => {
+    drag = null;
+    shell.classList.remove('dragging');
+    setTimeout(() => delete shell.dataset.moved, 0);
+  });
 }
 
-function createBracketNodeMarkup(matchItem) {
-  const currentWinner = tournamentResults[matchItem.id] || null;
-  const slotZero = resolveMatchSlot(matchItem.s0, tournamentResults);
-  const slotOne = resolveMatchSlot(matchItem.s1, tournamentResults);
-
-  const isMatchedSearch = isMatchHighlightedBySearch(slotZero.name, slotOne.name);
-  const isStreamMatch = Boolean(matchItem.stream);
-
-  return `
-    <div class="bracket-match-node ${isMatchedSearch ? 'highlighted' : ''} ${isStreamMatch ? 'stream-node' : ''}" 
-         onclick="openMatchDetailModal('${matchItem.id}')" 
-         id="bracket-node-${matchItem.id}">
-      <div class="node-meta-row">
-        <span class="node-id">${matchItem.id}</span>
-        ${matchItem.bye ? '<span class="node-bye-tag">BYE</span>' : ''}
-        ${isStreamMatch ? '<span class="node-stream-tag">STREAM</span>' : ''}
-        <span class="node-time">${matchItem.time} WIB</span>
-      </div>
-      <div class="node-slots">
-        <div class="node-slot ${getSlotClass(slotZero.name, slotZero.isKnown, currentWinner)}">
-          <span class="slot-name">${slotZero.name}</span>
-          ${currentWinner === slotZero.name ? '<span class="slot-status-mark">[MENANG]</span>' : ''}
-        </div>
-        <div class="node-slot ${getSlotClass(slotOne.name, slotOne.isKnown, currentWinner)}">
-          <span class="slot-name">${slotOne.name}</span>
-          ${currentWinner === slotOne.name ? '<span class="slot-status-mark">[MENANG]</span>' : ''}
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function getSlotClass(teamName, isKnown, winnerTeam) {
-  if (!isKnown) return 'tbd';
-  if (winnerTeam === teamName) return 'win';
-  if (winnerTeam && winnerTeam !== teamName) return 'loss';
-  return '';
-}
-
-function isMatchHighlightedBySearch(nameA, nameB) {
-  if (!activeSearchQuery) return false;
-  const query = activeSearchQuery.toLowerCase();
-  return nameA.toLowerCase().includes(query) || nameB.toLowerCase().includes(query);
-}
-
-// ==========================================================================
-// TAB 2: RUNDOWN JADWAL PER HARI
-// ==========================================================================
-function renderScheduleView() {
-  const panelDay1 = document.getElementById('schedule-day-1');
-  const panelDay2 = document.getElementById('schedule-day-2');
-  const panelDay3 = document.getElementById('schedule-day-3');
-
-  if (panelDay1) {
-    panelDay1.innerHTML = `
-      <div class="timeline-summary-bar">
-        <div class="timeline-step"><span class="step-time">18.30</span> R1 Kloter 1 (13 Laga)</div>
-        <div class="timeline-step"><span class="step-time">18.45</span> R1 Kloter 2 (13 Laga)</div>
-        <div class="timeline-step"><span class="step-time">19.25</span> R32 Kloter 1 (8 Laga)</div>
-        <div class="timeline-step"><span class="step-time">19.40</span> R32 Kloter 2 (8 Laga)</div>
-        <div class="timeline-step"><span class="step-time">20.20</span> Round of 16 (8 Laga)</div>
-        <div class="timeline-step"><span class="step-time">21.00</span> Quarterfinal (4 Laga)</div>
-      </div>
-      ${renderRoundAccordion('Round 1', 'Babak 1 Kualifikasi', '18.30 - 19.15 WIB', BRACKET_MATCHES.filter(m => m.round === 'Round 1'), true, true)}
-      ${renderRoundAccordion('Round of 32', 'Babak 32 Besar (Termasuk Tim Seeded BYE)', '19.25 - 20.10 WIB', BRACKET_MATCHES.filter(m => m.round === 'Round of 32'), true, false)}
-      ${renderRoundAccordion('Round of 16', 'Babak 16 Besar', '20.20 - 20.50 WIB', BRACKET_MATCHES.filter(m => m.round === 'Round of 16'), false, false)}
-      ${renderRoundAccordion('Quarterfinal', 'Babak Perempat Final', '21.00 - 21.30 WIB', BRACKET_MATCHES.filter(m => m.round === 'Quarterfinal'), false, false)}
-    `;
-  }
-
-  if (panelDay2) {
-    panelDay2.innerHTML = `
-      <div class="timeline-summary-bar">
-        <div class="timeline-step"><span class="step-time">18.30</span> Semifinal 1 (BO3 - Live Stream)</div>
-        <div class="timeline-step"><span class="step-time">19.45</span> Semifinal 2 (BO3 - Live Stream)</div>
-        <div class="timeline-step"><span class="step-time">~21.00</span> Penutupan Day 2</div>
-      </div>
-      ${renderRoundAccordion('Semifinal', 'Babak Semifinal Resmi (BO3)', '18.30 - 21.00 WIB', BRACKET_MATCHES.filter(m => m.round === 'Semifinal'), false, true)}
-    `;
-  }
-
-  if (panelDay3) {
-    panelDay3.innerHTML = `
-      <div class="timeline-summary-bar">
-        <div class="timeline-step"><span class="step-time">18.30</span> Perebutan Juara 3 (BO3 - Live Stream)</div>
-        <div class="timeline-step"><span class="step-time">19.45</span> Grand Final Championship (BO5 - Live Stream)</div>
-        <div class="timeline-step"><span class="step-time">~21.45</span> Penyerahan Apresiasi & Juara</div>
-      </div>
-      ${renderRoundAccordion('Finals', 'Championship Final Day (BO3 & BO5)', '18.30 - 21.45 WIB', BRACKET_MATCHES.filter(m => m.round === 'Perebutan Juara 3' || m.round === 'Grand Final'), false, true)}
-    `;
-  }
-}
-
-function renderRoundAccordion(roundKey, roundTitle, timeRange, matchesList, hasKloter, isDefaultOpen) {
-  let innerBodyHtml = '';
-
-  if (hasKloter) {
-    const kloterOneMatches = matchesList.filter(m => m.kloter === 1);
-    const kloterTwoMatches = matchesList.filter(m => m.kloter === 2);
-
-    innerBodyHtml = `
-      <div class="kloter-divider">Kloter 1 — Dimulai 18.30 / 19.25 WIB (${kloterOneMatches.length} Pertandingan)</div>
-      <div class="matches-grid">
-        ${kloterOneMatches.map(renderScheduleCard).join('')}
-      </div>
-      <div class="kloter-divider">Kloter 2 — Dimulai 18.45 / 19.40 WIB (${kloterTwoMatches.length} Pertandingan)</div>
-      <div class="matches-grid">
-        ${kloterTwoMatches.map(renderScheduleCard).join('')}
-      </div>
-    `;
-  } else {
-    innerBodyHtml = `
-      <div class="matches-grid">
-        ${matchesList.map(renderScheduleCard).join('')}
-      </div>
-    `;
-  }
-
-  return `
-    <div class="stage-accordion-block ${isDefaultOpen ? 'open' : ''}">
-      <div class="stage-header" onclick="toggleStageAccordion(this)">
-        <div class="stage-title-wrap">
-          <span class="stage-title">${roundTitle}</span>
-          <div class="stage-badges">
-            <span class="stage-badge">${matchesList.length} Match</span>
-            <span class="stage-time-range">${timeRange}</span>
-          </div>
-        </div>
-        <div class="stage-toggle-icon">▼</div>
-      </div>
-      <div class="stage-body">
-        ${innerBodyHtml}
-      </div>
-    </div>
-  `;
-}
-
-function renderScheduleCard(matchItem) {
-  const currentWinner = tournamentResults[matchItem.id] || null;
-  const slotZero = resolveMatchSlot(matchItem.s0, tournamentResults);
-  const slotOne = resolveMatchSlot(matchItem.s1, tournamentResults);
-  const isSearchMatched = isMatchHighlightedBySearch(slotZero.name, slotOne.name);
-
-  const nextDestination = matchItem.next ? matchItem.next.m : 'Selesai';
-
-  return `
-    <div class="schedule-match-card ${isSearchMatched ? 'highlighted' : ''}" 
-         onclick="openMatchDetailModal('${matchItem.id}')"
-         id="sched-card-${matchItem.id}">
-      <div class="card-top-row">
-        <span class="card-match-id">${matchItem.id} · ${matchItem.round}</span>
-        <span class="card-time-badge">${matchItem.time} WIB</span>
-      </div>
-
-      <div class="card-teams-wrap">
-        <div class="card-team-slot ${getSlotClass(slotZero.name, slotZero.isKnown, currentWinner)}">
-          <span class="slot-name">${slotZero.name}</span>
-          ${currentWinner === slotZero.name ? '<span class="slot-status-mark">[MENANG]</span>' : ''}
-        </div>
-
-        <div class="card-team-slot ${getSlotClass(slotOne.name, slotOne.isKnown, currentWinner)}">
-          <span class="slot-name">${slotOne.name}</span>
-          ${currentWinner === slotOne.name ? '<span class="slot-status-mark">[MENANG]</span>' : ''}
-        </div>
-      </div>
-
-      <div class="card-footer-info">
-        <span class="next-advance-label">Lolos ke ${nextDestination}</span>
-        <span class="card-format-tag">${matchItem.format}</span>
-      </div>
-    </div>
-  `;
-}
-
-// ==========================================================================
-// TAB 3: DIREKTORI 58 TIM
-// ==========================================================================
-function renderTeamsDirectory() {
-  const container = document.getElementById('teams-grid-container');
-  if (!container) return;
-
-  const filterSelect = document.getElementById('team-status-filter');
-  const selectedFilter = filterSelect ? filterSelect.value : 'all';
-
-  let filteredTeams = TEAMS_DATA;
-
-  if (activeSearchQuery) {
-    const q = activeSearchQuery.toLowerCase();
-    filteredTeams = filteredTeams.filter(t => t.name.toLowerCase().includes(q));
-  }
-
-  if (selectedFilter === 'bye') {
-    filteredTeams = filteredTeams.filter(t => t.hasBye);
-  } else if (selectedFilter === 'eliminated') {
-    filteredTeams = filteredTeams.filter(t => isTeamEliminated(t.name));
-  } else if (selectedFilter === 'active') {
-    filteredTeams = filteredTeams.filter(t => !isTeamEliminated(t.name));
-  }
-
-  if (filteredTeams.length === 0) {
-    container.innerHTML = `<div style="grid-column: 1/-1; padding: 32px; text-align: center; color: var(--text-dim);">Tidak ada tim yang cocok dengan kriteria pencarian.</div>`;
-    return;
-  }
-
-  container.innerHTML = filteredTeams.map(teamRecord => {
-    const entryMatch = MATCH_BY_ID[teamRecord.entryMatch];
-    const isEliminated = isTeamEliminated(teamRecord.name);
-
-    return `
-      <div class="team-card">
-        <div class="team-card-header">
-          <span class="team-seed-badge ${teamRecord.hasBye ? 'bye' : ''}">${teamRecord.seedStatus}</span>
-          <span style="font-size: 0.72rem; font-family: var(--font-mono); color: var(--text-dim);">${teamRecord.id}</span>
-        </div>
-        <div class="team-name">${teamRecord.name}</div>
-        <div class="team-details-list">
-          <div class="team-detail-item">
-            <span>Babak Pembuka:</span>
-            <span class="team-detail-val">${teamRecord.initialRound}</span>
-          </div>
-          <div class="team-detail-item">
-            <span>Laga Pertama:</span>
-            <span class="team-detail-val">${teamRecord.entryMatch} (${entryMatch ? entryMatch.time : '-'} WIB)</span>
-          </div>
-          <div class="team-detail-item">
-            <span>Status Tim:</span>
-            <span class="team-detail-val" style="color: ${isEliminated ? 'var(--color-error)' : 'var(--color-win)'};">
-              ${isEliminated ? 'Tereliminasi' : 'Aktif / Bertanding'}
-            </span>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-}
-
-function isTeamEliminated(teamName) {
-  for (const matchId in tournamentResults) {
-    const winner = tournamentResults[matchId];
-    const match = MATCH_BY_ID[matchId];
-    if (!match) continue;
-    const s0 = resolveMatchSlot(match.s0, tournamentResults);
-    const s1 = resolveMatchSlot(match.s1, tournamentResults);
-
-    if ((s0.name === teamName || s1.name === teamName) && winner !== teamName) {
-      // In Semifinal (M55, M56), the loser plays in M57 (Bronze match)
-      if (matchId === 'M55' || matchId === 'M56') {
-        const bronzeWinner = tournamentResults['M57'];
-        if (bronzeWinner && bronzeWinner !== teamName) {
-          return true;
-        }
-        return false;
-      }
-      return true;
-    }
-  }
-  return false;
-}
-
-// ==========================================================================
-// TAB 4: REGULASI & RULES
-// ==========================================================================
-function renderRulesAccordion() {
-  const container = document.getElementById('rules-accordion');
-  if (!container) return;
-
-  const searchInput = document.getElementById('rules-search-input');
-  const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
-
-  let chaptersList = TOURNAMENT_RULES;
-
-  if (query) {
-    chaptersList = chaptersList.map(chapter => {
-      const filteredItems = chapter.items.filter(item => 
-        item.title.toLowerCase().includes(query) || 
-        item.text.toLowerCase().includes(query) ||
-        chapter.title.toLowerCase().includes(query)
-      );
-      return { ...chapter, items: filteredItems };
-    }).filter(chapter => chapter.items.length > 0);
-  }
-
-  if (chaptersList.length === 0) {
-    container.innerHTML = `<div style="padding: 32px; text-align: center; color: var(--text-dim);">Tidak ditemukan pasal atau regulasi yang sesuai kata kunci.</div>`;
-    return;
-  }
-
-  container.innerHTML = chaptersList.map((chapter, index) => {
-    return `
-      <div class="rule-chapter-card ${index === 0 || query ? 'open' : ''}">
-        <div class="rule-chapter-header" onclick="toggleRuleChapter(this)">
-          <div class="rule-chapter-title-group">
-            <span class="rule-chapter-num">${chapter.chapter}</span>
-            <span class="rule-chapter-title">${chapter.title}</span>
-            <span class="rule-chapter-summary">${chapter.summary}</span>
-          </div>
-          <div class="stage-toggle-icon">▼</div>
-        </div>
-        <div class="rule-chapter-body">
-          <div class="rule-items-stack">
-            ${chapter.items.map(item => `
-              <div class="rule-single-item">
-                <div class="rule-item-headline">
-                  <span class="rule-item-number">${item.number}</span>
-                  <span class="rule-item-title">${item.title}</span>
-                </div>
-                <div class="rule-item-text">${item.text}</div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-}
-
-// ==========================================================================
-// TAB 5: STREAM MATCHES LIST
-// ==========================================================================
-function renderStreamMatchesList() {
-  const container = document.getElementById('stream-matches-list');
-  if (!container) return;
-
-  const streamMatches = BRACKET_MATCHES.filter(m => m.stream);
-
-  container.innerHTML = streamMatches.map(matchItem => {
-    const currentWinner = tournamentResults[matchItem.id] || null;
-    const s0 = resolveMatchSlot(matchItem.s0, tournamentResults);
-    const s1 = resolveMatchSlot(matchItem.s1, tournamentResults);
-
-    return `
-      <div class="stream-match-item" onclick="openMatchDetailModal('${matchItem.id}')" style="cursor: pointer;">
-        <div class="card-top-row" style="margin-bottom: 6px;">
-          <span style="font-family: var(--font-display); font-weight: 800; color: var(--color-stream);">${matchItem.round} (${matchItem.format})</span>
-          <span style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-dim);">${matchItem.date} · ${matchItem.time} WIB</span>
-        </div>
-        <div class="card-teams-wrap">
-          <div class="card-team-slot ${getSlotClass(s0.name, s0.isKnown, currentWinner)}">
-            <span class="slot-name">${s0.name}</span>
-            ${currentWinner === s0.name ? '<span class="slot-status-mark">[MENANG]</span>' : ''}
-          </div>
-          <div class="card-team-slot ${getSlotClass(s1.name, s1.isKnown, currentWinner)}">
-            <span class="slot-name">${s1.name}</span>
-            ${currentWinner === s1.name ? '<span class="slot-status-mark">[MENANG]</span>' : ''}
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-}
-
-// ==========================================================================
-// INTERAKSI & MODALS
-// ==========================================================================
-window.openMatchDetailModal = function(matchId) {
-  const match = MATCH_BY_ID[matchId];
+/* ---------- Match modal ---------- */
+function openMatch(matchId) {
+  const match = ui.resolved.get(matchId);
   if (!match) return;
+  $('#modal-eyebrow').textContent = `${match.round} Â· ${ui.t.day} ${match.day} Â· ${match.date}`;
+  $('#modal-title').textContent = `Match ${match.id.replace('M', '')} Â· ${match.format}`;
+  const team = (slot) => {
+    const teamId = match.teams[slot];
+    const name = displayName(teamId) || ui.t.tbd;
+    const win = match.done && match.winnerSlot === slot;
+    return `<div class="modal-team ${win ? 'win' : ''}"><span class="seed-lg" style="width:28px;text-align:center;font-family:var(--font-mono);font-size:12px;color:var(--muted)">${seedOf(teamId)}</span><strong>${escapeHtml(name)}</strong>${win ? `<span class="pill">${escapeHtml(ui.t.winner)}</span>` : ''}</div>`;
+  };
+  const next = match.next ? `<span>${escapeHtml(ui.t.nextMatch)}: Match ${match.next.m.replace('M', '')}</span>` : '';
+  $('#modal-body').innerHTML = `${team(0)}${team(1)}<div class="modal-info"><span>${match.time} WIB${match.kloter ? ` Â· Kloter ${match.kloter}` : ''}</span>${next}${match.stream ? `<span>${escapeHtml(ui.t.live)}</span>` : ''}</div>`;
+  $('#modal').classList.add('open');
+}
 
-  const currentWinner = tournamentResults[matchId] || null;
-  const s0 = resolveMatchSlot(match.s0, tournamentResults);
-  const s1 = resolveMatchSlot(match.s1, tournamentResults);
+function closeModal() { $('#modal').classList.remove('open'); }
 
-  const modal = document.getElementById('modal-match-detail');
-  const title = document.getElementById('modal-match-title');
-  const eyebrow = document.getElementById('modal-match-eyebrow');
-  const body = document.getElementById('modal-match-body');
+/* ---------- Schedule ---------- */
+function listItemHtml(match) {
+  const team = (slot) => {
+    const name = displayName(match.teams[slot]);
+    const win = match.done && match.winnerSlot === slot;
+    return `<div class="list-team ${win ? 'win' : ''} ${name ? '' : 'empty'}"><span>${escapeHtml(name || ui.t.tbd)}</span><span>${win ? 'W' : ''}</span></div>`;
+  };
+  return `<div class="list-item" data-match="${match.id}">
+    <div class="list-meta"><span>M${match.id.replace('M', '')} Â· ${match.time}${match.kloter ? ` Â· K${match.kloter}` : ''}</span><span>${match.stream ? `<span class="pill">${escapeHtml(ui.t.live)}</span>` : match.format}</span></div>
+    ${team(0)}${team(1)}
+  </div>`;
+}
 
-  eyebrow.textContent = `${match.round} · ${match.format}`;
-  title.textContent = `Match ${match.id.slice(1)} (${match.id})`;
+function renderSchedule() {
+  $('#day-tabs').innerHTML = [1, 2, 3].map(day => `<button class="tab ${ui.day === day ? 'active' : ''}" data-day="${day}">${escapeHtml(ui.t.day)} ${day}</button>`).join('');
+  const groups = new Map();
+  [...ui.resolved.values()].filter(match => match.day === ui.day).forEach(match => {
+    const key = `${match.round}|${match.time}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(match);
+  });
+  $('#schedule-list').innerHTML = [...groups.entries()].map(([key, matches]) => {
+    const [round, time] = key.split('|');
+    return `<div class="round-block"><h3>${round}<span>${time} WIB Â· ${matches[0].format}</span></h3><div class="list">${matches.map(listItemHtml).join('')}</div></div>`;
+  }).join('');
+}
 
-  const nextLabel = match.next ? `Pemenang melaju ke ${match.next.m}` : 'Penentuan Juara';
-  const loserLabel = match.nextLoser ? `Kalah bertanding di ${match.nextLoser.m}` : '';
+/* ---------- Teams ---------- */
+function renderTeams() {
+  const filters = [['all', ui.t.filterAll], ['active', ui.t.filterActive], ['out', ui.t.filterOut]];
+  $('#team-tabs').innerHTML = filters.map(([key, label]) => `<button class="tab ${ui.teamFilter === key ? 'active' : ''}" data-filter="${key}">${escapeHtml(label)}</button>`).join('');
+  const out = eliminatedTeams(ui.resolved);
+  const list = TEAMS_DATA.filter(team => {
+    if (ui.teamFilter === 'active') return !out.has(team.id);
+    if (ui.teamFilter === 'out') return out.has(team.id);
+    return true;
+  });
+  $('#team-grid').innerHTML = list.map(team => {
+    const name = displayName(team.id);
+    return `<div class="team-card ${out.has(team.id) ? 'out' : ''}">
+      <span class="seed-lg">${team.seed}</span>
+      <div style="min-width:0"><strong class="${name ? '' : 'empty'}">${escapeHtml(name || ui.t.emptySlot)}</strong>
+      <small>${team.initialRound} Â· M${team.entryMatch.replace('M', '')} Â· ${team.initialTime}${team.hasBye ? ' Â· BYE' : ''}</small></div>
+    </div>`;
+  }).join('');
+}
 
-  const winnerMarkup = currentWinner 
-    ? `<div style="padding: 10px 14px; background: var(--color-win-subtle); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-sm); color: var(--color-win); font-weight: 700; font-size: 0.9rem;">
-        Pemenang Pertandingan: ${currentWinner}
-       </div>`
-    : `<div style="padding: 10px 14px; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); color: var(--text-dim); font-size: 0.85rem;">
-        Pertandingan belum diselesaikan atau sedang berlangsung.
-       </div>`;
+/* ---------- Rules ---------- */
+function renderRules() {
+  const query = $('#rules-search').value.trim().toLowerCase();
+  const chapters = TOURNAMENT_RULES.map(chapter => ({
+    ...chapter,
+    items: chapter.items.filter(item => !query || `${chapter.title} ${item.title} ${item.text}`.toLowerCase().includes(query))
+  })).filter(chapter => chapter.items.length);
+  $('#rules-toc').innerHTML = TOURNAMENT_RULES.map(chapter => `<a href="#rules" data-chapter="${chapter.id}">${chapter.chapter} Â· ${escapeHtml(chapter.title)}</a>`).join('');
+  $('#rules-body').innerHTML = chapters.map(chapter => `<article class="chapter" id="${chapter.id}">
+    <div class="chapter-tag">${chapter.chapter}</div><h3>${escapeHtml(chapter.title)}</h3><p>${escapeHtml(chapter.summary)}</p>
+    ${chapter.items.map(item => `<div class="clause"><b>${item.number}</b><div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.text)}</p></div></div>`).join('')}
+  </article>`).join('');
+}
 
-  body.innerHTML = `
-    <div style="display: flex; flex-direction: column; gap: 14px;">
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8rem; background: var(--bg-surface-elevated); padding: 10px; border-radius: var(--radius-sm);">
-        <div><strong>Jadwal:</strong> ${match.date}, ${match.time} WIB</div>
-        <div><strong>Kloter:</strong> ${match.kloter ? `Kloter ${match.kloter}` : 'Reguler'}</div>
-        <div><strong>Format:</strong> ${match.format} (Custom Draft Pick)</div>
-        <div><strong>Status Siaran:</strong> ${match.stream ? 'Official Stream' : 'Reguler'}</div>
-      </div>
+/* ---------- Stream ---------- */
+const CHANNELS_CONFIG = [
+  {
+    key: 'youtube',
+    name: 'YouTube Live',
+    color: '#ef4444',
+    svg: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>'
+  },
+  {
+    key: 'instagram',
+    name: 'Instagram Live',
+    color: '#e1306c',
+    svg: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>'
+  },
+  {
+    key: 'tiktok',
+    name: 'TikTok Live',
+    color: '#06b6d4',
+    svg: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64c.298-.002.595.042.88.13V9.4a6.33 6.33 0 0 0-1-.08A6.34 6.34 0 0 0 3 15.66a6.34 6.34 0 0 0 10.82 4.49 6.3 6.3 0 0 0 1.87-4.49V8.82a8.28 8.28 0 0 0 4.9 1.58V6.95a4.83 4.83 0 0 1-1-.26z"/></svg>'
+  },
+  {
+    key: 'twitch',
+    name: 'Twitch',
+    color: '#9333ea',
+    svg: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.149 0l-1.612 4.119v16.036h5.051v3.845h3.819l3.842-3.845h4.821l5.93-5.928V0H2.149zm19.641 13.411l-3.568 3.568h-5.051l-3.328 3.328v-3.328H5.661V1.9h16.129v11.511z"/><path d="M10.866 5.228h2.378v6.892h-2.378zm5.952 0h2.378v6.892h-2.378z"/></svg>'
+  },
+  {
+    key: 'prism',
+    name: 'PRISM Live',
+    color: '#0d9488',
+    svg: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polygon points="2 17 12 22 22 17 12 12 2 17"/><polygon points="2 12 12 17 22 12 12 7 2 12"/></svg>'
+  }
+];
 
-      <div style="display: flex; flex-direction: column; gap: 6px;">
-        <div style="font-weight: 700; font-size: 0.82rem; color: var(--text-muted);">Kontestan Laga:</div>
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg-surface-elevated); border-radius: var(--radius-sm); font-weight: 600;">
-          <span style="color: ${currentWinner === s0.name ? 'var(--color-win)' : 'var(--text-main)'};">${s0.name}</span>
-          ${currentWinner === s0.name ? '<span style="font-size: 0.75rem; color: var(--color-win); font-weight: 700;">[PEMENANG]</span>' : ''}
-        </div>
-        <div style="text-align: center; font-size: 0.75rem; font-weight: 800; color: var(--text-dim);">VS</div>
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg-surface-elevated); border-radius: var(--radius-sm); font-weight: 600;">
-          <span style="color: ${currentWinner === s1.name ? 'var(--color-win)' : 'var(--text-main)'};">${s1.name}</span>
-          ${currentWinner === s1.name ? '<span style="font-size: 0.75rem; color: var(--color-win); font-weight: 700;">[PEMENANG]</span>' : ''}
-        </div>
-      </div>
+function renderStream() {
+  const container = $('#channels-grid');
+  if (container) {
+    const streams = ui.data.streams || {};
+    container.innerHTML = CHANNELS_CONFIG.map(ch => {
+      const url = (streams[ch.key] || '').trim();
+      const isActive = Boolean(url && url.length > 5);
+      const tag = isActive ? 'a' : 'div';
+      const hrefAttr = isActive ? `href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"` : 'aria-disabled="true"';
+      const statusPill = isActive
+        ? `<span class="pill-live"><i></i>${escapeHtml(ui.t.liveActive || 'LIVE')}</span>`
+        : `<span class="pill-offline">${escapeHtml(ui.t.liveInactive || 'OFFLINE')}</span>`;
+      const actionText = isActive
+        ? `${escapeHtml(ui.t.openStream || 'Buka Siaran')} &rarr;`
+        : `${escapeHtml(ui.t.streamOffline || 'Siaran tidak aktif')}`;
 
-      ${winnerMarkup}
+      return `
+        <${tag} class="channel-card ${isActive ? 'active' : 'inactive'}" ${hrefAttr}>
+          <div class="channel-head">
+            <div class="channel-brand">
+              <span class="channel-icon" style="color:${ch.color}">${ch.svg}</span>
+              <span>${escapeHtml(ch.name)}</span>
+            </div>
+            ${statusPill}
+          </div>
+          <div class="channel-action">
+            <span>${actionText}</span>
+          </div>
+        </${tag}>
+      `;
+    }).join('');
+  }
 
-      <div style="font-size: 0.78rem; color: var(--text-dim); border-top: 1px solid var(--border-subtle); padding-top: 8px;">
-        <div>${nextLabel}</div>
-        ${loserLabel ? `<div>${loserLabel}</div>` : ''}
-      </div>
-    </div>
-  `;
-
-  modal.classList.add('open');
-};
-
-window.closeMatchModal = function() {
-  const modal = document.getElementById('modal-match-detail');
-  if (modal) modal.classList.remove('open');
-};
-
-window.toggleStageAccordion = function(headerElement) {
-  const parent = headerElement.closest('.stage-accordion-block');
-  if (parent) parent.classList.toggle('open');
-};
-
-window.toggleRuleChapter = function(headerElement) {
-  const parent = headerElement.closest('.rule-chapter-card');
-  if (parent) parent.classList.toggle('open');
-};
-
-// ==========================================================================
-// TEMA & NAVIGASI
-// ==========================================================================
-function applyTheme(themeName) {
-  currentTheme = themeName;
-  document.documentElement.setAttribute('data-theme', themeName);
-  localStorage.setItem(STORAGE_KEYS.THEME, themeName);
-
-  const sunIcon = document.getElementById('theme-icon-sun');
-  const moonIcon = document.getElementById('theme-icon-moon');
-
-  if (sunIcon && moonIcon) {
-    if (themeName === 'light') {
-      sunIcon.classList.add('hidden');
-      moonIcon.classList.remove('hidden');
+  const heroBtn = $('#hero-stream-btn');
+  if (heroBtn) {
+    const streams = ui.data.streams || {};
+    const firstActive = Object.values(streams).find(u => u && u.trim().length > 5);
+    if (firstActive) {
+      heroBtn.href = firstActive;
+      heroBtn.style.pointerEvents = 'auto';
+      heroBtn.style.opacity = '1';
     } else {
-      sunIcon.classList.remove('hidden');
-      moonIcon.classList.add('hidden');
+      heroBtn.removeAttribute('href');
+      heroBtn.style.pointerEvents = 'none';
+      heroBtn.style.opacity = '0.5';
     }
   }
+
+  $('#stream-list').innerHTML = [...ui.resolved.values()].filter(match => match.stream).map(listItemHtml).join('');
 }
 
-function toggleTheme() {
-  const targetTheme = currentTheme === 'dark' ? 'light' : 'dark';
-  applyTheme(targetTheme);
+/* ---------- Data sync ---------- */
+function setSync(mode) {
+  const node = $('#sync');
+  node.className = `sync ${mode}`;
+  node.title = mode === 'online' ? 'Online' : 'Offline';
 }
 
-window.switchMainTab = function(tabId) {
-  document.querySelectorAll('.tab-panel').forEach(panel => {
-    panel.classList.toggle('active', panel.id === tabId);
-  });
-  document.querySelectorAll('.nav-tab').forEach(btn => {
-    btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId);
-  });
-  window.scrollTo({ top: 320, behavior: 'smooth' });
-};
-
-// ==========================================================================
-// EVENT LISTENERS & SETUP
-// ==========================================================================
-function setupEventListeners() {
-  // Theme Toggle
-  const themeBtn = document.getElementById('theme-toggle-btn');
-  if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
-
-  // Main Nav Tabs
-  document.querySelectorAll('.nav-tab').forEach(tabBtn => {
-    tabBtn.addEventListener('click', () => {
-      const targetId = tabBtn.getAttribute('data-tab');
-      document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      tabBtn.classList.add('active');
-      const targetPanel = document.getElementById(targetId);
-      if (targetPanel) targetPanel.classList.add('active');
-    });
-  });
-
-  // Day Switcher for Schedule
-  document.querySelectorAll('.day-tab-btn').forEach(dayBtn => {
-    dayBtn.addEventListener('click', () => {
-      const selectedDay = parseInt(dayBtn.getAttribute('data-day'), 10);
-      activeScheduleDay = selectedDay;
-      document.querySelectorAll('.day-tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.schedule-day-panel').forEach(p => p.classList.remove('active'));
-      dayBtn.classList.add('active');
-      const targetDayPanel = document.getElementById(`schedule-day-${selectedDay}`);
-      if (targetDayPanel) targetDayPanel.classList.add('active');
-    });
-  });
-
-  // Global Search
-  const globalSearchInput = document.getElementById('global-search-input');
-  const clearSearchBtn = document.getElementById('clear-search-btn');
-  const searchPill = document.getElementById('search-active-pill');
-  const searchQueryDisplay = document.getElementById('search-query-display');
-  const resetFilterLink = document.getElementById('reset-filter-link');
-
-  if (globalSearchInput) {
-    globalSearchInput.addEventListener('input', e => {
-      activeSearchQuery = e.target.value.trim();
-      if (activeSearchQuery) {
-        clearSearchBtn.classList.remove('hidden');
-        searchPill.classList.remove('hidden');
-        searchQueryDisplay.textContent = activeSearchQuery;
-      } else {
-        clearSearchBtn.classList.add('hidden');
-        searchPill.classList.add('hidden');
-      }
-      renderAllViews();
-    });
+async function syncData() {
+  try {
+    ui.data = await fetchRemote();
+    writeCache(ui.data);
+    setSync('online');
+  } catch {
+    setSync('offline');
   }
-
-  if (clearSearchBtn) {
-    clearSearchBtn.addEventListener('click', () => {
-      if (globalSearchInput) globalSearchInput.value = '';
-      activeSearchQuery = '';
-      clearSearchBtn.classList.add('hidden');
-      searchPill.classList.add('hidden');
-      renderAllViews();
-    });
-  }
-
-  if (resetFilterLink) {
-    resetFilterLink.addEventListener('click', () => {
-      if (globalSearchInput) globalSearchInput.value = '';
-      activeSearchQuery = '';
-      clearSearchBtn.classList.add('hidden');
-      searchPill.classList.add('hidden');
-      renderAllViews();
-    });
-  }
-
-  // Rules search input
-  const rulesSearchInput = document.getElementById('rules-search-input');
-  if (rulesSearchInput) {
-    rulesSearchInput.addEventListener('input', () => {
-      renderRulesAccordion();
-    });
-  }
-
-  // Team Filter Select
-  const teamFilterSelect = document.getElementById('team-status-filter');
-  if (teamFilterSelect) {
-    teamFilterSelect.addEventListener('change', () => {
-      renderTeamsDirectory();
-    });
-  }
-
-  // Floating Share Button
-  const shareBtn = document.getElementById('floating-share-btn');
-  if (shareBtn) {
-    shareBtn.addEventListener('click', shareBracketUrl);
-  }
-
-  // Reset Zoom Button
-  const resetZoomBtn = document.getElementById('bracket-reset-zoom');
-  if (resetZoomBtn) {
-    resetZoomBtn.addEventListener('click', () => {
-      const scrollArea = document.getElementById('bracket-scroll-area');
-      if (scrollArea) {
-        scrollArea.scrollTo({ left: 0, behavior: 'smooth' });
-      }
-    });
-  }
-
-  // Close modals on outside click or ESC
-  window.addEventListener('keydown', e => {
-    if (e.key === 'Escape') {
-      closeMatchModal();
-    }
-  });
-
-  document.querySelectorAll('.modal-overlay').forEach(overlay => {
-    overlay.addEventListener('click', e => {
-      if (e.target === overlay) {
-        closeMatchModal();
-      }
-    });
-  });
-}
-
-function shareBracketUrl() {
-  const encodedState = encodeURIComponent(btoa(JSON.stringify(tournamentResults)));
-  const shareableUrl = `${window.location.origin}${window.location.pathname}#s=${encodedState}`;
-
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(shareableUrl)
-      .then(() => showToast('Tautan bagan berhasil disalin ke clipboard'))
-      .catch(() => window.prompt('Salin tautan bagan:', shareableUrl));
-  } else {
-    window.prompt('Salin tautan bagan:', shareableUrl);
-  }
+  renderAll();
 }
 
 function showToast(message) {
-  const toast = document.getElementById('toast-message');
-  if (!toast) return;
-
+  const toast = $('#toast');
   toast.textContent = message;
   toast.classList.add('show');
-
-  clearTimeout(toast.timeoutId);
-  toast.timeoutId = setTimeout(() => {
-    toast.classList.remove('show');
-  }, 2800);
+  setTimeout(() => toast.classList.remove('show'), 2400);
 }
 
-function escapeQuotes(str) {
-  return (str || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+/* ---------- Boot ---------- */
+function boot() {
+  const select = $('#lang-select');
+  select.innerHTML = LANGUAGES.map(item => `<option value="${item.code}">${item.label}</option>`).join('');
+  select.value = ui.lang;
+  select.addEventListener('change', () => {
+    ui.lang = select.value;
+    localStorage.setItem('zenith_lang', ui.lang);
+    applyLanguage();
+    renderAll();
+  });
+
+  $('#theme-btn').addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem('zenith_theme', next);
+  });
+
+  document.addEventListener('click', event => {
+    const dayTab = event.target.closest('[data-day]');
+    if (dayTab) { ui.day = Number(dayTab.dataset.day); renderSchedule(); return; }
+    const filterTab = event.target.closest('[data-filter]');
+    if (filterTab) { ui.teamFilter = filterTab.dataset.filter; renderTeams(); return; }
+    const chapterLink = event.target.closest('[data-chapter]');
+    if (chapterLink) { event.preventDefault(); document.getElementById(chapterLink.dataset.chapter)?.scrollIntoView({ behavior: 'smooth' }); return; }
+    const item = event.target.closest('.list-item');
+    if (item) openMatch(item.dataset.match);
+  });
+
+  $('#rules-search').addEventListener('input', renderRules);
+  $('#modal-close').addEventListener('click', closeModal);
+  $('#modal').addEventListener('click', event => { if (event.target.id === 'modal') closeModal(); });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') closeModal(); });
+  window.addEventListener('hashchange', applyRoute);
+
+  applyLanguage();
+  applyRoute();
+  setupBracketInteractions();
+  renderAll();
+  syncData();
+  subscribeRemote(data => {
+    ui.data = data;
+    writeCache(data);
+    setSync('online');
+    renderAll();
+    showToast('Live update');
+  });
 }
+
+boot();
+
