@@ -172,7 +172,7 @@ function renderResults() {
       return `<button class="pick ${match.winnerSlot === slot ? 'on' : ''}" data-match="${match.id}" data-slot="${slot}" ${ready ? '' : 'disabled'}>${escapeHtml(label)}</button>`;
     };
     return `<div class="result-row">
-      <span class="meta">${match.id} Â· ${match.round}<br>${match.time} Â· ${match.format}</span>
+      <span class="meta">${match.id} · ${match.round}<br>${match.time} · ${match.format}</span>
       ${pick(0)}${pick(1)}
       <button class="btn btn-ghost btn-sm" data-reset="${match.id}" ${match.done ? '' : 'disabled'}>Reset</button>
     </div>`;
