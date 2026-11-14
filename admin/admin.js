@@ -1,7 +1,7 @@
 import {
   DB_ROOT, readCache, writeCache, fetchRemote, subscribeRemote,
   resolveMatches, getActiveMatches, getActiveTeams, normalizeConfig, defaultConfig,
-  teamName, teamMeta, downstreamMatches, formatIsoDateId, padTeamId, escapeHtml
+  defaultSeriesWinScore, teamName, teamMeta, downstreamMatches, formatIsoDateId, padTeamId, escapeHtml
 } from '../core.js';
 
 // Akun panitia disimpan sebagai hash SHA-256 dari "uajm-esport:<username>:<password>".
@@ -157,8 +157,79 @@ function renderTeams() {
     <span class="seed-lg">${team.seed}</span>
     <input data-team="${team.id}" data-seed="${team.seed}" maxlength="40" placeholder="Nama tim Seed ${team.seed}..." value="${escapeHtml(teamName(admin.data, team.id))}" aria-label="Nama tim seed ${team.seed}">
     <small>${escapeHtml(team.entryMatch)}${team.hasBye ? ' BYE' : ''}</small>
+    <button type="button" class="team-move" data-move-seed="${team.seed}" data-move-dir="-1" title="Geser naik Seed ${team.seed}" ${team.seed === 1 ? 'disabled style="opacity:0.25"' : ''}>&uarr;</button>
+    <button type="button" class="team-move" data-move-seed="${team.seed}" data-move-dir="1" title="Geser turun Seed ${team.seed}" ${team.seed === cfg.teamCount ? 'disabled style="opacity:0.25"' : ''}>&darr;</button>
     ${cfg.teamCount > 2 ? `<button type="button" class="team-del" data-remove-seed="${team.seed}" title="Hapus slot Seed ${team.seed} dan sesuaikan bracket">&times;</button>` : ''}
   </label>`).join('');
+}
+
+async function moveTeamSlot(seedIndex, dir) {
+  const values = collectOrderedInputValues();
+  const i = Number(seedIndex) - 1;
+  const j = i + Number(dir);
+  if (i < 0 || j < 0 || i >= values.length || j >= values.length) return;
+  [values[i], values[j]] = [values[j], values[i]];
+  const nextTeams = {};
+  values.forEach((val, idx) => {
+    if (val) nextTeams[padTeamId(idx + 1)] = val;
+  });
+  admin.data.teams = nextTeams;
+  writeCache(admin.data);
+  renderAllPanels();
+  try {
+    await remoteWrite('teams', 'PUT', nextTeams);
+    setSync(true);
+    showToast(`Posisi Seed ${i + 1} dan Seed ${j + 1} ditukar`);
+  } catch {
+    setSync(false);
+  }
+}
+
+async function quickAddParticipant() {
+  const input = $('#quick-add-name');
+  if (!input) return;
+  const name = input.value.replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 40);
+  if (!name) {
+    showToast('Ketik nama tim peserta terlebih dahulu');
+    return;
+  }
+  const cfg = normalizeConfig(admin.data.config);
+  const values = collectOrderedInputValues();
+  const emptyIdx = values.findIndex(v => !v);
+  let assignedSeed = 1;
+  if (emptyIdx !== -1) {
+    values[emptyIdx] = name;
+    assignedSeed = emptyIdx + 1;
+  } else {
+    if (cfg.teamCount >= 128) {
+      showToast('Maksimal 128 tim telah tercapai');
+      return;
+    }
+    values.push(name);
+    cfg.teamCount = values.length;
+    cfg.customStructure = cfg.teamCount !== 58;
+    cfg.matchOverrides = {};
+    assignedSeed = values.length;
+  }
+  const nextTeams = {};
+  values.forEach((val, idx) => {
+    if (val) nextTeams[padTeamId(idx + 1)] = val;
+  });
+  input.value = '';
+  admin.data.teams = nextTeams;
+  admin.data.config = cfg;
+  writeCache(admin.data);
+  renderAllPanels();
+  try {
+    await Promise.all([
+      remoteWrite('teams', 'PUT', nextTeams),
+      remoteWrite('config', 'PUT', cfg)
+    ]);
+    setSync(true);
+    showToast(`"${name}" ditambahkan sebagai Seed ${assignedSeed} (Bracket: ${cfg.teamCount} tim)`);
+  } catch {
+    setSync(false);
+  }
 }
 
 function collectTeamNames() {
@@ -779,7 +850,7 @@ async function resetStructureDefault() {
   renderAllPanels();
 }
 
-/* ---------- Tab 4: Results ---------- */
+/* ---------- Tab 4: Results & Match Scores (Challonge) ---------- */
 function renderResults() {
   const resolved = resolveMatches(admin.data);
   const all = [...resolved.values()];
@@ -787,25 +858,52 @@ function renderResults() {
   const list = all.filter(match => admin.round === 'all' || match.round === admin.round);
   $('#result-list').innerHTML = list.map(match => {
     const ready = match.teams[0] && match.teams[1];
+    const s0Val = match.done && match.scores?.[0] !== null ? match.scores[0] : '';
+    const s1Val = match.done && match.scores?.[1] !== null ? match.scores[1] : '';
     const pick = (slot) => {
       const teamId = match.teams[slot];
       const meta = teamMeta(teamId, admin.data);
       const label = teamId ? (teamName(admin.data, teamId) || `Seed ${meta?.seed || ''} (belum diisi)`) : 'Menunggu';
       return `<button class="pick ${match.winnerSlot === slot ? 'on' : ''}" type="button" data-match="${match.id}" data-slot="${slot}" ${ready ? '' : 'disabled'}>${escapeHtml(label)}</button>`;
     };
-    return `<div class="result-row">
+    return `<div class="result-row" data-result-row="${match.id}">
       <span class="meta">${match.id} · ${escapeHtml(match.round)}<br>${escapeHtml(match.date)} · ${escapeHtml(match.time)} · ${escapeHtml(match.format)}</span>
-      ${pick(0)}${pick(1)}
+      ${pick(0)}
+      <input class="score-in" type="number" min="0" max="9" placeholder="Skor" data-score-match="${match.id}" data-score-slot="0" value="${escapeHtml(String(s0Val))}" aria-label="Skor Tim 1 ${match.id}" ${ready ? '' : 'disabled'}>
+      ${pick(1)}
+      <input class="score-in" type="number" min="0" max="9" placeholder="Skor" data-score-match="${match.id}" data-score-slot="1" value="${escapeHtml(String(s1Val))}" aria-label="Skor Tim 2 ${match.id}" ${ready ? '' : 'disabled'}>
       <button class="btn btn-ghost btn-sm" type="button" data-reset="${match.id}" ${match.done ? '' : 'disabled'}>Reset</button>
     </div>`;
   }).join('');
 }
 
-async function setWinner(matchId, slot) {
+async function setWinner(matchId, slot, explicitScores = null) {
+  const resolved = resolveMatches(admin.data);
+  const match = resolved.get(matchId);
+  const winTarget = defaultSeriesWinScore(match?.format || 'BO1');
+
+  let s0;
+  let s1;
+  if (Array.isArray(explicitScores)) {
+    [s0, s1] = explicitScores;
+  } else {
+    const in0 = $(`[data-score-match="${matchId}"][data-score-slot="0"]`)?.value ?? '';
+    const in1 = $(`[data-score-match="${matchId}"][data-score-slot="1"]`)?.value ?? '';
+    const n0 = in0 !== '' ? Number(in0) : NaN;
+    const n1 = in1 !== '' ? Number(in1) : NaN;
+    if (Number.isFinite(n0) && Number.isFinite(n1) && ((slot === 0 && n0 > n1) || (slot === 1 && n1 > n0))) {
+      s0 = n0;
+      s1 = n1;
+    } else {
+      s0 = slot === 0 ? winTarget : 0;
+      s1 = slot === 1 ? winTarget : 0;
+    }
+  }
+
   const current = admin.data.results[matchId];
-  if (current && current.w === slot) return;
-  const cleared = current ? downstreamMatches(matchId, admin.data).filter(id => admin.data.results[id]) : [];
-  admin.data.results[matchId] = { w: slot, at: Date.now() };
+  const winnerChanged = Boolean(current && current.w !== slot);
+  const cleared = winnerChanged ? downstreamMatches(matchId, admin.data).filter(id => admin.data.results[id]) : [];
+  admin.data.results[matchId] = { w: slot, s0, s1, score: [s0, s1], at: Date.now() };
   cleared.forEach(id => delete admin.data.results[id]);
   writeCache(admin.data);
   renderResults();
@@ -813,7 +911,7 @@ async function setWinner(matchId, slot) {
     await remoteWrite(`results/${matchId}`, 'PUT', admin.data.results[matchId]);
     await Promise.all(cleared.map(id => remoteWrite(`results/${id}`, 'DELETE')));
     setSync(true);
-    showToast(`${matchId} tersimpan`);
+    showToast(`${matchId} disimpan (${s0} – ${s1})`);
   } catch {
     setSync(false);
     showToast('Gagal menyimpan ke database');
@@ -923,7 +1021,20 @@ function boot() {
       resizeBracketSlots(count, { toastPrefix: `Preset ${count} Tim` });
     });
   });
+  $('#quick-add-btn')?.addEventListener('click', quickAddParticipant);
+  $('#quick-add-name')?.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      quickAddParticipant();
+    }
+  });
   $('#team-edit').addEventListener('click', event => {
+    const moveBtn = event.target.closest('[data-move-seed]');
+    if (moveBtn && !moveBtn.disabled) {
+      event.preventDefault();
+      moveTeamSlot(Number(moveBtn.dataset.moveSeed), Number(moveBtn.dataset.moveDir));
+      return;
+    }
     const delBtn = event.target.closest('[data-remove-seed]');
     if (!delBtn) return;
     event.preventDefault();
@@ -1050,6 +1161,21 @@ function boot() {
     if (pick && !pick.disabled) { setWinner(pick.dataset.match, Number(pick.dataset.slot)); return; }
     const reset = event.target.closest('[data-reset]');
     if (reset && !reset.disabled) resetMatch(reset.dataset.reset);
+  });
+  $('#result-list').addEventListener('change', event => {
+    const scoreIn = event.target.closest('[data-score-match]');
+    if (!scoreIn || scoreIn.disabled) return;
+    const mId = scoreIn.dataset.scoreMatch;
+    const s0Raw = $(`[data-score-match="${mId}"][data-score-slot="0"]`)?.value ?? '';
+    const s1Raw = $(`[data-score-match="${mId}"][data-score-slot="1"]`)?.value ?? '';
+    if (s0Raw === '' || s1Raw === '') return;
+    const s0 = Math.max(0, Math.min(9, Math.round(Number(s0Raw) || 0)));
+    const s1 = Math.max(0, Math.min(9, Math.round(Number(s1Raw) || 0)));
+    if (s0 === s1) {
+      showToast('Skor seri tidak valid di sistem eliminasi. Masukkan skor pemenang yang lebih tinggi.');
+      return;
+    }
+    setWinner(mId, s0 > s1 ? 0 : 1, [s0, s1]);
   });
 
   // Tab 5: Streams

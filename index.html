@@ -223,9 +223,12 @@
             <button class="icon-btn" id="zoom-out" type="button" aria-label="Zoom out">&minus;</button>
             <span class="zoom-readout" id="zoom-level">100%</span>
             <button class="icon-btn" id="zoom-in" type="button" aria-label="Zoom in">+</button>
+            <button class="btn btn-ghost btn-sm" id="zoom-fit" type="button" title="Sesuaikan seluruh bagan ke lebar layar">Fit</button>
             <button class="btn btn-ghost btn-sm" id="zoom-reset" type="button" data-i18n="reset"></button>
+            <button class="btn btn-ghost btn-sm" id="bracket-fullscreen" type="button" title="Buka tampilan bracket layar penuh">Layar Penuh</button>
           </div>
         </div>
+        <div id="bracket-podium" class="podium-grid hidden"></div>
         <div class="bracket-bar">
           <div class="round-jumps" id="round-jumps">
             <button type="button" class="round-jump" data-jump-col="0">Round 1</button>
@@ -237,7 +240,8 @@
           </div>
           <div class="bracket-legend">
             <span class="legend-item"><i class="legend-dot"></i> Live Stream</span>
-            <span class="legend-item"><strong style="color:var(--win);font-family:var(--font-mono)">W</strong> <span data-i18n="winner">Pemenang</span></span>
+            <span class="legend-item"><strong style="color:var(--win);font-family:var(--font-mono)">2 - 0</strong> <span data-i18n="winner">Skor &amp; Pemenang</span></span>
+            <span class="legend-item"><span style="font-family:var(--font-mono);font-size:11px;font-style:italic;color:var(--muted)">W M1</span> <span>Pemenang Laga</span></span>
           </div>
         </div>
         <div class="bracket-shell" id="bracket-shell"><div class="bracket-stage" id="bracket-stage"></div></div>

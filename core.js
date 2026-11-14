@@ -567,7 +567,14 @@ export function teamMeta(teamId, state) {
   return null;
 }
 
-// Mengembalikan daftar pertandingan dengan ID tim yang sudah diselesaikan.
+export function defaultSeriesWinScore(format) {
+  if (format === 'BO7') return 4;
+  if (format === 'BO5') return 3;
+  if (format === 'BO3') return 2;
+  return 1;
+}
+
+// Mengembalikan daftar pertandingan dengan ID tim dan skor yang sudah diselesaikan.
 export function resolveMatches(state) {
   const activeMatches = getActiveMatches(state);
   const resolved = new Map();
@@ -586,15 +593,60 @@ export function resolveMatches(state) {
     const result = state?.results?.[match.id];
     const slot = result && (result.w === 0 || result.w === 1) ? result.w : null;
     const winnerSlot = slot !== null && teams[slot] ? slot : null;
+    const done = winnerSlot !== null;
+    const winTarget = defaultSeriesWinScore(match.format);
+    let scores = [null, null];
+    if (done) {
+      const rawS0 = result?.s0 !== undefined ? Number(result.s0) : (Array.isArray(result?.score) ? Number(result.score[0]) : NaN);
+      const rawS1 = result?.s1 !== undefined ? Number(result.s1) : (Array.isArray(result?.score) ? Number(result.score[1]) : NaN);
+      scores = [
+        Number.isFinite(rawS0) ? rawS0 : (winnerSlot === 0 ? winTarget : 0),
+        Number.isFinite(rawS1) ? rawS1 : (winnerSlot === 1 ? winTarget : 0)
+      ];
+    }
     resolved.set(match.id, {
       ...match,
       teams,
       winnerSlot,
-      done: winnerSlot !== null,
-      score: result && Array.isArray(result.score) ? result.score : null
+      done,
+      scores,
+      score: done ? scores : null
     });
   }
   return resolved;
+}
+
+export function computeStandings(resolved) {
+  const matches = [...resolved.values()];
+  const gf = matches.find(m => m.round === 'Grand Final') || matches[matches.length - 1];
+  const third = matches.find(m => m.round === '3rd Place Match');
+  const semis = matches.filter(m => m.round === 'Semifinals');
+
+  const podium = {
+    first: gf && gf.done ? gf.teams[gf.winnerSlot] : null,
+    second: gf && gf.done ? gf.teams[1 - gf.winnerSlot] : null,
+    third: third && third.done ? third.teams[third.winnerSlot] : (!third && semis[0]?.done ? semis[0].teams[1 - semis[0].winnerSlot] : null),
+    fourth: third && third.done ? third.teams[1 - third.winnerSlot] : (!third && semis[1]?.done ? semis[1].teams[1 - semis[1].winnerSlot] : null)
+  };
+
+  const records = new Map();
+  const ensure = (tId) => {
+    if (!tId) return null;
+    if (!records.has(tId)) records.set(tId, { wins: 0, losses: 0, lastRound: '' });
+    return records.get(tId);
+  };
+
+  for (const m of matches) {
+    if (!m.done) continue;
+    const wId = m.teams[m.winnerSlot];
+    const lId = m.teams[1 - m.winnerSlot];
+    const wRec = ensure(wId);
+    const lRec = ensure(lId);
+    if (wRec) { wRec.wins += 1; wRec.lastRound = m.round; }
+    if (lRec) { lRec.losses += 1; lRec.lastRound = m.round; }
+  }
+
+  return { podium, records };
 }
 
 export function eliminatedTeams(resolved) {

@@ -2,7 +2,7 @@ import { TOURNAMENT_RULES } from './rules-data.js';
 import { LANGUAGES, RTL_LANGUAGES, getDictionary } from './i18n.js';
 import {
   readCache, writeCache, fetchRemote, subscribeRemote,
-  resolveMatches, getActiveTeams, normalizeConfig, eliminatedTeams,
+  resolveMatches, computeStandings, getActiveTeams, normalizeConfig, eliminatedTeams,
   teamName, teamMeta, escapeHtml
 } from './core.js';
 
@@ -137,12 +137,15 @@ function renderLanding() {
       const isGrand = m.round === 'Grand Final';
       const renderTeamSlot = (slot) => {
         const tId = m.teams[slot];
-        const name = displayName(tId) || ui.t.tbd;
+        const def = slot === 0 ? m.s0 : m.s1;
+        const prereq = !tId && def ? (def.w ? `W ${def.w}` : (def.l ? `L ${def.l}` : '')) : '';
+        const name = displayName(tId) || prereq || ui.t.tbd;
         const seed = seedOf(tId);
         const win = m.done && m.winnerSlot === slot;
+        const scoreTxt = m.done ? String(m.scores?.[slot] ?? (win ? 'W' : '0')) : '';
         return `<div class="stage-team ${win ? 'win' : ''}">
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${seed ? `<small style="font-family:var(--font-mono);color:var(--muted);margin-right:6px">#${seed}</small>` : ''}${escapeHtml(name)}</span>
-          <strong>${win ? 'W' : ''}</strong>
+          <strong>${escapeHtml(scoreTxt)}</strong>
         </div>`;
       };
       return `<article class="stage-card ${isGrand ? 'grand' : ''}" data-match="${m.id}">
@@ -306,14 +309,53 @@ function computeLayout(matches) {
 
 function rowHtml(match, slot) {
   const teamId = match.teams[slot];
+  const def = slot === 0 ? match.s0 : match.s1;
   const name = displayName(teamId);
   let state = '';
   if (match.done) state = match.winnerSlot === slot ? 'win' : 'lose';
-  return `<div class="row ${state}" data-team="${teamId || ''}">
+
+  const prereqMatchId = !teamId && def ? (def.w || def.l || '') : '';
+  const prereqText = !teamId && def ? (def.w ? `W ${def.w}` : (def.l ? `L ${def.l}` : '')) : '';
+  const scoreMark = match.done
+    ? String(match.scores?.[slot] ?? (match.winnerSlot === slot ? 'W' : '0'))
+    : '';
+
+  return `<div class="row ${state}" data-team="${teamId || ''}" ${prereqMatchId ? `data-prereq="${escapeHtml(prereqMatchId)}"` : ''}>
     <span class="seed">${seedOf(teamId)}</span>
-    <span class="name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
-    <span class="mark">${match.done && match.winnerSlot === slot ? 'W' : ''}</span>
+    ${teamId
+      ? `<span class="name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>`
+      : `<span class="name prereq" title="${escapeHtml(prereqText)}">${escapeHtml(prereqText)}</span>`}
+    <span class="mark">${escapeHtml(scoreMark)}</span>
   </div>`;
+}
+
+function renderPodiumBar(podium) {
+  const podEl = $('#bracket-podium');
+  if (!podEl) return;
+  const entries = [
+    { key: 'first', label: '1st Place · Champion', cls: 'first', badge: '#1' },
+    { key: 'second', label: '2nd Place · Runner-Up', cls: 'second', badge: '#2' },
+    { key: 'third', label: '3rd Place · Bronze', cls: 'third', badge: '#3' },
+    { key: 'fourth', label: '4th Place · Semifinalist', cls: 'fourth', badge: '#4' }
+  ];
+  const hasAny = entries.some(e => Boolean(podium[e.key]));
+  if (!hasAny) {
+    podEl.innerHTML = '';
+    podEl.classList.add('hidden');
+    return;
+  }
+  podEl.innerHTML = entries.map(e => {
+    const tId = podium[e.key];
+    const tName = tId ? (displayName(tId) || `Seed ${seedOf(tId)}`) : ui.t.tbd;
+    return `<div class="podium-card ${e.cls}">
+      <div style="min-width:0">
+        <small>${escapeHtml(e.label)}</small>
+        <strong style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(tName)}</strong>
+      </div>
+      <span class="seed-lg">${escapeHtml(e.badge)}</span>
+    </div>`;
+  }).join('');
+  podEl.classList.remove('hidden');
 }
 
 function renderBracket() {
@@ -322,6 +364,11 @@ function renderBracket() {
   const { positions, labels, totalHeight } = computeLayout(matches);
   const width = COLUMN_STEP * Math.max(labels.length, 1) + 40;
   const height = totalHeight;
+  ui.stageWidth = width;
+  ui.stageHeight = height;
+
+  const { podium } = computeStandings(ui.resolved);
+  renderPodiumBar(podium);
 
   const bracketSub = $('#bracket-sub');
   if (bracketSub) {
@@ -379,9 +426,10 @@ function renderBracket() {
   applyBracketSearch();
 }
 
-function highlightTeam(teamId) {
+function highlightTeam(teamId, prereqMatchId = '') {
   document.querySelectorAll('#bracket-stage .row').forEach(row => row.classList.toggle('lit', Boolean(teamId) && row.dataset.team === teamId));
   document.querySelectorAll('#bracket-stage path').forEach(path => path.classList.toggle('lit', Boolean(teamId) && path.dataset.team === teamId));
+  document.querySelectorAll('#bracket-stage .match').forEach(card => card.classList.toggle('prereq-lit', Boolean(prereqMatchId) && card.dataset.match === prereqMatchId));
 }
 
 function applyBracketSearch() {
@@ -399,23 +447,43 @@ function setupBracketInteractions() {
   const shell = $('#bracket-shell');
   stage.addEventListener('mouseover', event => {
     const row = event.target.closest('.row');
-    highlightTeam(row ? row.dataset.team : '');
+    highlightTeam(row ? row.dataset.team : '', row ? row.dataset.prereq : '');
   });
-  stage.addEventListener('mouseleave', () => highlightTeam(''));
+  stage.addEventListener('mouseleave', () => highlightTeam('', ''));
   stage.addEventListener('click', event => {
     const card = event.target.closest('.match');
     if (card && !shell.dataset.moved) openMatch(card.dataset.match);
   });
 
   const setZoom = (value) => {
-    ui.zoom = Math.min(1.6, Math.max(0.4, Math.round(value * 100) / 100));
+    ui.zoom = Math.min(1.6, Math.max(0.35, Math.round(value * 100) / 100));
     stage.style.zoom = ui.zoom;
     const zoomNode = $('#zoom-level');
     if (zoomNode) zoomNode.textContent = `${Math.round(ui.zoom * 100)}%`;
   };
   $('#zoom-in').addEventListener('click', () => setZoom(ui.zoom + 0.1));
   $('#zoom-out').addEventListener('click', () => setZoom(ui.zoom - 0.1));
+  $('#zoom-fit')?.addEventListener('click', () => {
+    const stageW = ui.stageWidth || 1200;
+    const availW = Math.max(320, shell.clientWidth - 24);
+    setZoom(availW / stageW);
+    shell.scrollTo({ left: 0, top: 0 });
+  });
   $('#zoom-reset').addEventListener('click', () => { setZoom(window.innerWidth < 640 ? 0.75 : 1); shell.scrollTo({ left: 0, top: 0 }); });
+  $('#bracket-fullscreen')?.addEventListener('click', async () => {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {});
+      shell.classList.remove('is-fullscreen');
+    } else if (shell.requestFullscreen) {
+      try {
+        await shell.requestFullscreen();
+      } catch {
+        shell.classList.toggle('is-fullscreen');
+      }
+    } else {
+      shell.classList.toggle('is-fullscreen');
+    }
+  });
   $('#bracket-search').addEventListener('input', applyBracketSearch);
 
   const jumps = $('#round-jumps');
@@ -457,9 +525,12 @@ function openMatch(matchId) {
   $('#modal-title').textContent = `Match ${match.id.replace('M', '')} · ${match.format}`;
   const team = (slot) => {
     const teamId = match.teams[slot];
-    const name = displayName(teamId) || ui.t.tbd;
+    const def = slot === 0 ? match.s0 : match.s1;
+    const prereq = !teamId && def ? (def.w ? `W ${def.w}` : (def.l ? `L ${def.l}` : '')) : '';
+    const name = displayName(teamId) || prereq || ui.t.tbd;
     const win = match.done && match.winnerSlot === slot;
-    return `<div class="modal-team ${win ? 'win' : ''}"><span class="seed-lg" style="width:28px;text-align:center;font-family:var(--font-mono);font-size:12px;color:var(--muted)">${seedOf(teamId)}</span><strong>${escapeHtml(name)}</strong>${win ? `<span class="pill">${escapeHtml(ui.t.winner)}</span>` : ''}</div>`;
+    const scoreBadge = match.done ? `<span class="pill" style="margin-left:auto">${escapeHtml(String(match.scores?.[slot] ?? (win ? 'W' : '0')))}</span>` : '';
+    return `<div class="modal-team ${win ? 'win' : ''}"><span class="seed-lg" style="width:28px;text-align:center;font-family:var(--font-mono);font-size:12px;color:var(--muted)">${seedOf(teamId)}</span><strong>${escapeHtml(name)}</strong>${scoreBadge}${win ? `<span class="pill">${escapeHtml(ui.t.winner)}</span>` : ''}</div>`;
   };
   const next = match.next ? `<span>${escapeHtml(ui.t.nextMatch)}: Match ${match.next.m.replace('M', '')}</span>` : '';
   $('#modal-body').innerHTML = `${team(0)}${team(1)}<div class="modal-info"><span>${escapeHtml(match.date)} · ${escapeHtml(match.time)} WIB${match.kloter ? ` · Kloter ${match.kloter}` : ''}</span>${next}${match.stream ? `<span>${escapeHtml(ui.t.live)}</span>` : ''}</div>`;
@@ -471,9 +542,13 @@ function closeModal() { $('#modal').classList.remove('open'); }
 /* ---------- Schedule ---------- */
 function listItemHtml(match) {
   const team = (slot) => {
-    const name = displayName(match.teams[slot]);
+    const tId = match.teams[slot];
+    const def = slot === 0 ? match.s0 : match.s1;
+    const prereq = !tId && def ? (def.w ? `W ${def.w}` : (def.l ? `L ${def.l}` : '')) : '';
+    const name = displayName(tId);
     const win = match.done && match.winnerSlot === slot;
-    return `<div class="list-team ${win ? 'win' : ''} ${name ? '' : 'empty'}"><span>${escapeHtml(name || ui.t.tbd)}</span><span>${win ? 'W' : ''}</span></div>`;
+    const scoreTxt = match.done ? String(match.scores?.[slot] ?? (win ? 'W' : '0')) : '';
+    return `<div class="list-team ${win ? 'win' : ''} ${name ? '' : 'empty'}"><span>${escapeHtml(name || prereq || ui.t.tbd)}</span><span>${escapeHtml(scoreTxt)}</span></div>`;
   };
   return `<div class="list-item" data-match="${match.id}">
     <div class="list-meta"><span>M${match.id.replace('M', '')} · ${escapeHtml(match.date)} · ${escapeHtml(match.time)}${match.kloter ? ` · K${match.kloter}` : ''}</span><span>${match.stream ? `<span class="pill">${escapeHtml(ui.t.live)}</span>` : escapeHtml(match.format)}</span></div>
@@ -505,6 +580,7 @@ function renderTeams() {
   const filters = [['all', ui.t.filterAll], ['active', ui.t.filterActive], ['out', ui.t.filterOut]];
   $('#team-tabs').innerHTML = filters.map(([key, label]) => `<button class="tab ${ui.teamFilter === key ? 'active' : ''}" data-filter="${key}">${escapeHtml(label)}</button>`).join('');
   const out = eliminatedTeams(ui.resolved);
+  const { podium, records } = computeStandings(ui.resolved);
   const query = ($('#team-search')?.value || '').trim().toLowerCase();
   const list = ui.teamsList.filter(team => {
     if (ui.teamFilter === 'active' && out.has(team.id)) return false;
@@ -518,10 +594,17 @@ function renderTeams() {
   });
   $('#team-grid').innerHTML = list.map(team => {
     const name = displayName(team.id);
+    const rec = records.get(team.id) || { wins: 0, losses: 0 };
+    let placeBadge = '';
+    if (podium.first === team.id) placeBadge = ' · #1 CHAMPION';
+    else if (podium.second === team.id) placeBadge = ' · #2 RUNNER-UP';
+    else if (podium.third === team.id) placeBadge = ' · #3 BRONZE';
+    else if (podium.fourth === team.id) placeBadge = ' · #4 SEMIFINALIST';
     return `<div class="team-card ${out.has(team.id) ? 'out' : ''}">
       <span class="seed-lg">${team.seed}</span>
       <div style="min-width:0;flex:1"><strong class="${name ? '' : 'empty'}">${escapeHtml(name || ui.t.emptySlot)}</strong>
-      <small>${escapeHtml(team.initialRound)} · M${escapeHtml(team.entryMatch.replace('M', ''))} · ${escapeHtml(team.initialDate)} · ${escapeHtml(team.initialTime)}${team.hasBye ? ' · BYE' : ''}</small></div>
+      <small>${escapeHtml(team.initialRound)} · M${escapeHtml(team.entryMatch.replace('M', ''))} · ${escapeHtml(team.initialDate)} · ${escapeHtml(team.initialTime)}${team.hasBye ? ' · BYE' : ''}${escapeHtml(placeBadge)}</small></div>
+      <span class="team-wl ${rec.wins > 0 ? 'has-win' : ''}">${rec.wins}W–${rec.losses}L</span>
     </div>`;
   }).join('');
 }
