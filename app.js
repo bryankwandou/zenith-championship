@@ -472,7 +472,7 @@ function setupBracketInteractions() {
   $('#zoom-reset').addEventListener('click', () => { setZoom(window.innerWidth < 640 ? 0.75 : 1); shell.scrollTo({ left: 0, top: 0 }); });
   $('#bracket-fullscreen')?.addEventListener('click', async () => {
     if (document.fullscreenElement) {
-      await document.exitFullscreen().catch(() => {});
+      await document.exitFullscreen().catch(() => { });
       shell.classList.remove('is-fullscreen');
     } else if (shell.requestFullscreen) {
       try {
@@ -610,13 +610,30 @@ function renderTeams() {
 }
 
 /* ---------- Rules ---------- */
+function dynamicRuleText(str) {
+  if (!str) return '';
+  const n = ui.teamsList?.length || 58;
+  const d1 = ui.cfg?.days?.[0]?.date || '10 Nov 2026';
+  const d2 = ui.cfg?.days?.[1]?.date || '11 Nov 2026';
+  const d3 = ui.cfg?.days?.[2]?.date || '12 Nov 2026';
+  return str
+    .replace(/58 Tim/g, `${n} Tim`)
+    .replace(/10 Nov 2026/g, d1)
+    .replace(/11 Nov 2026/g, d2)
+    .replace(/12 Nov 2026/g, d3);
+}
+
 function renderRules() {
   const query = $('#rules-search').value.trim().toLowerCase();
   const chapters = TOURNAMENT_RULES.map(chapter => ({
     ...chapter,
-    items: chapter.items.filter(item => !query || `${chapter.title} ${item.title} ${item.text}`.toLowerCase().includes(query))
+    items: chapter.items.map(item => ({
+      ...item,
+      title: dynamicRuleText(item.title),
+      text: dynamicRuleText(item.text)
+    })).filter(item => !query || `${chapter.title} ${item.title} ${item.text}`.toLowerCase().includes(query))
   })).filter(chapter => chapter.items.length);
-  $('#rules-toc').innerHTML = TOURNAMENT_RULES.map(chapter => `<a href="#rules" data-chapter="${chapter.id}">${chapter.chapter} · ${escapeHtml(chapter.title)}</a>`).join('');
+  $('#rules-toc').innerHTML = TOURNAMENT_RULES.map(chapter => `<a href="#rules" data-chapter="${chapter.id}"><strong>${escapeHtml(chapter.chapter)}</strong> · ${escapeHtml(chapter.title)}</a>`).join('');
   $('#rules-body').innerHTML = chapters.map(chapter => `<article class="chapter" id="${chapter.id}">
     <div class="chapter-tag">${chapter.chapter}</div><h3>${escapeHtml(chapter.title)}</h3><p>${escapeHtml(chapter.summary)}</p>
     ${chapter.items.map(item => `<div class="clause"><b>${item.number}</b><div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.text)}</p></div></div>`).join('')}
